@@ -1,0 +1,33 @@
+# 정책값 (코드·프롬프트와 분리)
+workflow:
+  max_rework: 2               # 검증 실패 시 원인 Agent 재작업 최대 횟수
+  max_react_steps: 12         # ReAct Agent 1회 실행당 최대 도구 호출 수
+  structured_output_retries: 1  # 스키마 검증 실패 시 재요청 횟수 (이후 규칙 기반 기본값)
+
+requirement:
+  required_fields:            # 비어 있으면 확인 질문으로 분기
+    - business_goal
+    - prediction_target
+    - analysis_unit
+    - prediction_time
+    - target_definition
+    - success_metric
+  min_completeness: 0.7       # 이 미만이면 설계 중단 후 확인 질문 단계
+
+rag:
+  top_k: 8
+  rrf_k: 60
+  hybrid_weights: {dense: 0.5, bm25: 0.5}
+  fewshot_k: 2
+  sources: [catalog, glossary, guide, case]
+
+review:
+  min_requirement_coverage: 0.9   # 요구사항 반영률
+  max_null_ratio: 0.3             # 피처 결측률 경고 기준
+  min_target_ratio: 0.02          # 이 미만이면 클래스 불균형 경고
+  min_rows: 1000
+
+sql:
+  readonly: true
+  max_rows: 10000
+  timeout_seconds: 30
