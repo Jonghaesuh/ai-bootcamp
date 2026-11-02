@@ -31,7 +31,8 @@ pid = st.sidebar.selectbox(
     "프로젝트",
     ids,
     index=ids.index(current) if current in ids else 0,
-    format_func=lambda i: next(p["title"] for p in projects if p["id"] == i),
+    # 제목이 같은 프로젝트가 여러 개일 수 있어 ID를 붙인다. 표시 문자열이 겹치면 Streamlit이 다른 항목을 고른다.
+    format_func=lambda i: f"{next(p['title'] for p in projects if p['id'] == i)} · {i}",
 )
 st.session_state["project_id"] = pid
 
@@ -72,28 +73,43 @@ if interrupt:
         if planner
         else "답하지 않은 항목은 기본값으로 진행합니다."
     )
+    demo_answers = state.get("demo_answers") or {}
+    if demo_answers:
+        st.info(
+            "🎬 데모 모드: 녹화 당시 답변이 채워져 있습니다. 그대로 '답변하고 계속'을 누르면 녹화가 재생됩니다."
+        )
     with st.form("answers"):
         answers = {}
         for q in interrupt["questions"]:
+            recorded = demo_answers.get(q["id"])
             with st.container(border=True):
                 st.markdown(f"**{q['question']}**")
                 if q.get("reason"):
                     st.caption(f"이유: {q['reason']}")
                 options = q.get("options") or []
                 if options:
-                    default = q.get("default_option")
+                    default = recorded or q.get("default_option")
+                    if default in options:
+                        index = options.index(default)
+                    else:
+                        index = (
+                            len(options) if recorded else 0
+                        )  # 녹화 답이 선택지에 없으면 직접 입력
                     choice = st.radio(
-                        "답변",
-                        [*options, DIRECT],
-                        index=options.index(default) if default in options else 0,
-                        key=f"r_{q['id']}",
-                        horizontal=True,
+                        "답변", [*options, DIRECT], index=index, key=f"r_{q['id']}", horizontal=True
                     )
-                    custom = st.text_input("직접 입력", key=f"t_{q['id']}")
+                    custom = st.text_input(
+                        "직접 입력",
+                        value=recorded if recorded and recorded not in options else "",
+                        key=f"t_{q['id']}",
+                    )
                     answers[q["id"]] = custom if choice == DIRECT else choice
                 else:
                     answers[q["id"]] = st.text_input(
-                        "답변", key=f"t_{q['id']}", placeholder=q.get("default_option") or ""
+                        "답변",
+                        value=recorded or "",
+                        key=f"t_{q['id']}",
+                        placeholder=q.get("default_option") or "",
                     )
         if st.form_submit_button("답변하고 계속", type="primary"):
             run_stream(client().resume(pid, answers={k: v for k, v in answers.items() if v}))

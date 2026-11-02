@@ -27,6 +27,10 @@ class Req2DataClient:
     def health(self) -> dict:
         return self._json("GET", "/health")
 
+    def demo(self) -> dict:
+        """데모 모드면 녹화된 정의서·사용자 유형 ({"demo_mode", "projects"})."""
+        return self._json("GET", "/admin/demo")
+
     def create_project(self, document: str, user_type: str, title: str | None = None) -> dict:
         return self._json(
             "POST", "/projects", json={"document": document, "user_type": user_type, "title": title}

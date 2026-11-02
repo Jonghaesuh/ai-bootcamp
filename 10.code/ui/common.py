@@ -46,6 +46,8 @@ def format_trace(e: dict) -> str:
     if kind == "answered":
         return f"💬 답변 반영: {e.get('answers')}"
     if kind == "fallback":
+        if "데모 녹화와 다른 입력" in (e.get("error") or ""):
+            return f"🎬 **{label(agent)}**: 데모 녹화와 다른 입력이라 기록된 응답이 없어 규칙 기반 기본값으로 진행"
         return f"⚠️ **{label(agent)}**: LLM 출력 실패로 규칙 기반 기본값 사용"
     details = []
     for key, text in (
@@ -88,6 +90,14 @@ def run_stream(events: Iterator[tuple[str, dict]]) -> None:
             st.error(str(exc))
             return
     st.rerun()
+
+
+def demo_info() -> dict:
+    """데모 모드면 녹화 입력 정보, 아니면 {"demo_mode": False}."""
+    try:
+        return client().demo()
+    except Exception:
+        return {"demo_mode": False, "projects": []}
 
 
 def api_ok() -> bool:

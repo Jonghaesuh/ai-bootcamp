@@ -9,6 +9,8 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel, ValidationError
 
+from req2data.llm.recording import DemoReplayMiss
+
 log = logging.getLogger(__name__)
 
 
@@ -78,9 +80,10 @@ def invoke_structured[T: BaseModel](
     for attempt in range(1, retries + 2):
         try:
             raw = _content(llm.invoke(convo, **native_schema_kwargs(llm, schema)))
-        except (
-            Exception
-        ) as exc:  # 타임아웃·연결 끊김은 같은 요청을 다시 보내고, 재시도를 다 쓰면 대체
+        except DemoReplayMiss as exc:  # 데모 녹화에 없는 입력: 다시 보내도 같으므로 바로 기본값
+            return StructuredResult(fallback(), attempt, used_fallback=True, error=str(exc))
+        except Exception as exc:
+            # 타임아웃·연결 끊김은 같은 요청을 다시 보내고, 재시도를 다 쓰면 대체
             error = f"LLM 호출 실패: {exc}"
             log.warning("LLM 호출 실패(%s, %d회차): %s", schema.__name__, attempt, exc)
             continue

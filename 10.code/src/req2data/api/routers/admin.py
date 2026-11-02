@@ -29,3 +29,11 @@ def reindex(body: ReindexRequest | None = None, services: Services = Depends(get
             save_profiles(profile_tables(con, services.kb.spec), services.kb.paths.profiles)
         services.kb.profiles = load_profiles(services.kb.paths.profiles)
     return {"loaded": loaded, "indexed": services.kb.rebuild()}
+
+
+@router.get("/demo")
+def demo_inputs(services: Services = Depends(get_services)) -> dict:
+    """데모 모드면 녹화된 정의서·사용자 유형을 돌려준다 (UI가 새 프로젝트 입력을 미리 채움)."""
+    if services.demo.role != "replay":
+        return {"demo_mode": False, "projects": []}
+    return {"demo_mode": True, "projects": services.demo.load()["projects"]}

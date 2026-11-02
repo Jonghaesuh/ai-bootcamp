@@ -3,11 +3,13 @@
 import logging
 import threading
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from langgraph.types import Command
 
 from req2data.graph import build_graph, new_project_state
+from req2data.service.demo import DemoInputs
 from req2data.service.projects import Project, ProjectRepository
 
 log = logging.getLogger(__name__)
@@ -35,9 +37,12 @@ class InvalidTransition(RuntimeError):
 
 
 class GraphRunner:
-    def __init__(self, deps, checkpointer, projects: ProjectRepository):
+    def __init__(
+        self, deps, checkpointer, projects: ProjectRepository, demo: DemoInputs | None = None
+    ):
         self.graph = build_graph(deps, checkpointer=checkpointer)
         self.projects = projects
+        self.demo = demo or DemoInputs(Path("demo_inputs.json"))
         self._locks: dict[str, threading.Lock] = {}
         self._guard = threading.Lock()
 
@@ -51,7 +56,9 @@ class GraphRunner:
         if self.graph.get_state(self.config(project.id)).values:
             raise InvalidTransition("이미 실행한 프로젝트입니다. 재개(resume)를 사용하세요.")
         payload = new_project_state(project.id, project.document, project.user_type)
-        return self._stream(project.id, payload)
+        events = self._stream(project.id, payload)
+        self.demo.record_project(project.document, project.user_type)
+        return events
 
     def resume(
         self,
@@ -65,7 +72,9 @@ class GraphRunner:
         if snap.interrupts:
             if change_request:
                 raise InvalidTransition("확인 질문에 먼저 답해 주세요.")
-            return self._stream(project.id, Command(resume={"answers": answers or {}}))
+            events = self._stream(project.id, Command(resume={"answers": answers or {}}))
+            self.demo.record_answers(snap.interrupts[0].value["questions"], answers or {})
+            return events
         if snap.next and not change_request:
             return self._stream(project.id, None)  # 중단된 실행을 마지막 체크포인트부터 이어서
         if not change_request:
@@ -126,4 +135,7 @@ class GraphRunner:
         values = snap.values or {}
         state = {k: values.get(k) for k in STATE_KEYS}
         state["interrupt"] = snap.interrupts[0].value if snap.interrupts else None
+        state["demo_answers"] = (
+            self.demo.answers_for(state["interrupt"]["questions"]) if state["interrupt"] else {}
+        )
         return state

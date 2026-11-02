@@ -1,5 +1,5 @@
 import streamlit as st
-from common import STATUS_LABELS, USER_TYPES, api_ok, client
+from common import STATUS_LABELS, USER_TYPES, api_ok, client, demo_info
 
 from req2data.config import get_settings
 
@@ -13,11 +13,32 @@ if not api_ok():
 
 samples = {p.stem: p for p in sorted((get_settings().data_dir / "samples").glob("*.md"))}
 
-source = st.radio("정의서 입력", ["직접 입력", "파일 업로드", "샘플 선택"], horizontal=True)
+# 데모 모드: 재생은 녹화와 입력이 같을 때만 맞으므로 녹화된 정의서·사용자 유형을 미리 고른다
+demo = demo_info()
+recorded = demo["projects"][0] if demo.get("demo_mode") and demo.get("projects") else None
+recorded_sample = next(
+    (
+        stem
+        for stem, path in samples.items()
+        if recorded and path.read_text(encoding="utf-8") == recorded["document"]
+    ),
+    None,
+)
+if demo.get("demo_mode"):
+    st.info(
+        "🎬 데모 모드: LLM 없이 녹화된 응답을 재생합니다. 녹화와 같은 정의서·사용자 유형·답변일 때만 재생되며, "
+        "아래 입력과 확인 질문 답변이 녹화 값으로 채워져 있습니다."
+        if recorded
+        else "🎬 데모 모드지만 녹화된 입력 정보가 없습니다 (demo/recordings/demo_inputs.json)."
+    )
+
+inputs = ["직접 입력", "파일 업로드", "샘플 선택"]
+source = st.radio("정의서 입력", inputs, index=2 if recorded_sample else 0, horizontal=True)
 text = ""
 if source == "직접 입력":
     text = st.text_area(
         "요구사항 정의서",
+        value=recorded["document"] if recorded and not recorded_sample else "",
         height=260,
         placeholder="예: 첫 구매 고객 중 재구매 가능성이 낮은 고객에게 쿠폰을 보내고 싶다...",
     )
@@ -28,14 +49,24 @@ elif source == "파일 업로드":
         with st.expander("내용 보기"):
             st.markdown(text)
 elif samples:
-    name = st.selectbox("샘플 정의서", list(samples))
+    names = list(samples)
+    name = st.selectbox(
+        "샘플 정의서", names, index=names.index(recorded_sample) if recorded_sample else 0
+    )
     text = samples[name].read_text(encoding="utf-8")
     with st.container(border=True, height=260):
         st.text(text)
 else:
     st.info("data/samples/에 샘플 정의서가 없습니다.")
 
-user_type = st.radio("사용자 유형", list(USER_TYPES), format_func=USER_TYPES.get, horizontal=True)
+types = list(USER_TYPES)
+user_type = st.radio(
+    "사용자 유형",
+    types,
+    index=types.index(recorded["user_type"]) if recorded else 0,
+    format_func=USER_TYPES.get,
+    horizontal=True,
+)
 title = st.text_input("프로젝트 이름 (비우면 정의서 첫 줄)")
 
 if st.button("프로젝트 만들고 실행", type="primary"):

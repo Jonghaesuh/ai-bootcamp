@@ -1,7 +1,7 @@
 """데모 모드: 실제 LLM 응답을 기록하고(LLM_RECORD=true), LLM 없이 재생한다(DEMO_MODE=true).
 
 입력 메시지·바인딩된 도구 이름의 해시를 키로 쓴다. temperature 0이라 같은 입력이면 같은 흐름이 재현된다.
-기록에 없는 호출은 "{}"를 돌려줘 각 Agent의 규칙 기반 기본값 경로로 넘어간다.
+기록에 없는 호출은 DemoReplayMiss를 던져, 각 Agent가 재시도 없이 규칙 기반 기본값 경로로 넘어간다.
 """
 
 import hashlib
@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, message_to_dict, messages_from_dict
+from langchain_core.messages import BaseMessage, message_to_dict, messages_from_dict
 from langchain_core.outputs import ChatGeneration, ChatResult
 from pydantic import PrivateAttr
 
@@ -22,6 +22,11 @@ log = logging.getLogger(__name__)
 
 RECORD_FILE = "llm_recordings.jsonl"
 _write_lock = threading.Lock()
+REPLAY_MISS = "데모 녹화와 다른 입력이라 기록된 응답이 없습니다"
+
+
+class DemoReplayMiss(RuntimeError):
+    """데모 모드에서 녹화에 없는 입력. LLM 장애가 아니므로 재시도하지 않는다."""
 
 
 def recording_key(label: str, messages: list[BaseMessage], tool_names: list[str]) -> str:
@@ -76,9 +81,8 @@ class RecordReplayChatModel(BaseChatModel):
             data = store.get(key)
             if data is None:
                 log.warning("데모 기록에 없는 LLM 호출(%s) → 기본값 경로", self.label)
-                message: BaseMessage = AIMessage(content="{}")
-            else:
-                message = messages_from_dict([data])[0]
+                raise DemoReplayMiss(REPLAY_MISS)
+            message: BaseMessage = messages_from_dict([data])[0]
         else:
             message = (self._bound or self.inner).invoke(messages, **kwargs)
             data = message_to_dict(message)
