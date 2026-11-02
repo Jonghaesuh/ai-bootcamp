@@ -1,3 +1,4 @@
+import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from req2data.llm import extract_json, invoke_structured
@@ -50,7 +51,7 @@ def test_wrapped_structure_is_rejected_not_silently_empty():
 
 
 def test_ollama_gets_json_schema_format():
-    from langchain_ollama import ChatOllama
+    ChatOllama = pytest.importorskip("langchain_ollama").ChatOllama
 
     from req2data.llm.recording import RecordReplayChatModel
     from req2data.llm.structured import native_schema_kwargs

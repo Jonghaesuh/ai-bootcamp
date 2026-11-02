@@ -3,15 +3,19 @@ from pathlib import Path
 from typing import Any, Literal
 
 import yaml
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
     """.env 기반 환경 설정. 정책값은 config.yaml(`policy`)에서 읽는다."""
 
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=".env", env_file_encoding="utf-8", extra="ignore", populate_by_name=True
+    )
 
-    llm_provider: Literal["ollama", "openai", "anthropic", "gemini"] = "ollama"
+    # 기본은 Azure OpenAI(GPT). 과제 실행 환경의 AOAI_* 환경변수를 그대로 읽는다.
+    llm_provider: Literal["azure", "ollama", "openai", "anthropic", "gemini"] = "azure"
     llm_model: str = "qwen2.5:14b-instruct"
     llm_temperature: float = 0.0
     # Ollama 컨텍스트 길이. 기본 4096이면 긴 프롬프트가 잘려 지시·스키마가 사라진다
@@ -26,8 +30,30 @@ class Settings(BaseSettings):
     anthropic_api_key: str | None = None
     google_api_key: str | None = None  # LLM_PROVIDER=gemini
 
-    embedding_provider: Literal["ollama", "openai"] = "ollama"
-    embedding_model: str = "bge-m3"
+    # Azure OpenAI (LLM_PROVIDER=azure, EMBEDDING_PROVIDER=azure). AZURE_* 이름이 있으면 우선한다.
+    azure_openai_endpoint: str | None = Field(
+        None, validation_alias=AliasChoices("azure_openai_endpoint", "aoai_endpoint")
+    )
+    azure_openai_api_key: str | None = Field(
+        None, validation_alias=AliasChoices("azure_openai_api_key", "aoai_api_key")
+    )
+    azure_openai_api_version: str = Field(
+        "2024-10-21",
+        validation_alias=AliasChoices(
+            "azure_openai_api_version", "aoai_api_version", "openai_api_version"
+        ),
+    )
+    azure_chat_deployment: str = Field(
+        "gpt-4.1-mini",
+        validation_alias=AliasChoices("azure_chat_deployment", "aoai_deploy_gpt41_mini"),
+    )
+    azure_embedding_deployment: str = Field(
+        "text-embedding-3-small",
+        validation_alias=AliasChoices("azure_embedding_deployment", "aoai_deploy_embed_3_small"),
+    )
+
+    embedding_provider: Literal["azure", "ollama", "openai"] = "azure"
+    embedding_model: str = "bge-m3"  # ollama·openai용 (azure는 azure_embedding_deployment)
 
     data_dir: Path = Path("./data")
     raw_data_dir: Path = Path("./data/raw/olist")
@@ -55,6 +81,21 @@ class Settings(BaseSettings):
     a2a_modeling_agent_url: str = "http://localhost:9999"
 
     log_level: str = "INFO"
+
+    @property
+    def llm_label(self) -> str:
+        model = self.azure_chat_deployment if self.llm_provider == "azure" else self.llm_model
+        return f"{self.llm_provider}:{model}"
+
+    @property
+    def embedding_label(self) -> str:
+        """인덱스에 기록하는 임베딩 이름. 바뀌면 인덱스를 다시 만들어야 한다."""
+        model = (
+            self.azure_embedding_deployment
+            if self.embedding_provider == "azure"
+            else self.embedding_model
+        )
+        return f"{self.embedding_provider}:{model}"
 
     @property
     def policy(self) -> dict[str, Any]:

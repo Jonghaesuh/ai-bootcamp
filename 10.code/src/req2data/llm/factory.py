@@ -1,11 +1,53 @@
+import logging
+
 from langchain_core.language_models import BaseChatModel
+from langchain_core.outputs import ChatResult
 
 from req2data.config import Settings, get_settings
+
+log = logging.getLogger(__name__)
+
+AZURE_KEYS_MISSING = (
+    "Azure OpenAI 설정이 없습니다. AOAI_ENDPOINT·AOAI_API_KEY"
+    "(또는 AZURE_OPENAI_ENDPOINT·AZURE_OPENAI_API_KEY) 환경변수를 지정하세요."
+)
+
+
+class UnconfiguredChatModel(BaseChatModel):
+    """키가 없을 때 서비스는 뜨게 하고(데모 모드 등) 실제 호출만 실패시킨다 → 규칙 기반 기본값으로 대체."""
+
+    reason: str
+
+    @property
+    def _llm_type(self) -> str:
+        return "unconfigured"
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs) -> ChatResult:
+        raise ValueError(self.reason)
 
 
 def get_chat_model(settings: Settings | None = None, *, json_mode: bool = False) -> BaseChatModel:
     """LLM 제공자 추상화. `json_mode`는 Structured Output 전용 호출에 쓴다(도구 호출과 함께 쓰지 않음)."""
     s = settings or get_settings()
+    if s.llm_provider == "azure":
+        from langchain_openai import AzureChatOpenAI
+
+        if not (s.azure_openai_endpoint and s.azure_openai_api_key):
+            if not s.demo_mode:
+                log.warning(AZURE_KEYS_MISSING)
+            return UnconfiguredChatModel(reason=AZURE_KEYS_MISSING)
+        kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
+        return AzureChatOpenAI(
+            azure_endpoint=s.azure_openai_endpoint,
+            azure_deployment=s.azure_chat_deployment,
+            api_key=s.azure_openai_api_key,
+            api_version=s.azure_openai_api_version,
+            temperature=s.llm_temperature,
+            max_tokens=s.llm_num_predict,
+            timeout=s.llm_timeout_seconds,
+            max_retries=6,  # 분당 요청 제한(429) 시 지수 백오프 재시도
+            model_kwargs=kwargs,
+        )
     if s.llm_provider == "ollama":
         from langchain_ollama import ChatOllama
 

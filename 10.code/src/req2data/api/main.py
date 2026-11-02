@@ -26,7 +26,7 @@ def create_app(services: Services | None = None) -> FastAPI:
     @app.get("/health", tags=["admin"])
     def health() -> dict:
         s = get_settings()
-        return {"status": "ok", "llm": f"{s.llm_provider}:{s.llm_model}", "demo_mode": s.demo_mode}
+        return {"status": "ok", "llm": s.llm_label, "demo_mode": s.demo_mode}
 
     return app
 

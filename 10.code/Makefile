@@ -1,7 +1,7 @@
 .PHONY: setup env models data index mcp api ui run demo record up up-demo down submit test test-llm lint
 
 setup: env
-	uv sync --all-groups --extra a2a
+	uv sync --all-groups --all-extras
 
 env:
 	@test -f .env || cp .env.example .env

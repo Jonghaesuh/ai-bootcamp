@@ -76,7 +76,7 @@ class KnowledgeBase:
             get_embeddings(s),
             persist_dir=s.chroma_dir,
             rag_policy=s.policy.get("rag", {}),
-            embedding_name=f"{s.embedding_provider}:{s.embedding_model}",
+            embedding_name=s.embedding_label,
         )
         if s.demo_mode or s.llm_record:
             kb.retriever.dense_recorder = DenseRecorder(

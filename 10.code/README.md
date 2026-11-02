@@ -7,7 +7,8 @@
 
 ```bash
 make setup     # .env 생성 + uv sync (Python 3.12, .venv)
-make models    # Ollama 모델: qwen2.5:14b-instruct, bge-m3
+# LLM·임베딩 기본값은 Azure OpenAI(GPT): .env 또는 환경변수에 AOAI_ENDPOINT·AOAI_API_KEY
+make models    # (선택) 로컬 Ollama 모델: qwen2.5:14b-instruct, bge-m3 → LLM_PROVIDER=ollama
 ```
 
 Olist 데이터: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce 의 CSV 9개를 `data/raw/olist/`에 둡니다.
@@ -20,14 +21,14 @@ make index     # 인덱스만 다시 구축 (CSV 없이도 카탈로그 정의·
 ## 실행
 
 ```bash
-make run       # API http://localhost:8000/docs + UI http://localhost:8501 (Ollama는 호스트에서 실행)
+make run       # API http://localhost:8000/docs + UI http://localhost:8501
 make demo      # LLM 없이 기록된 응답으로 실행
 make up        # Docker Compose
 ```
 
 API·UI·데모 모드·Docker 상세: [docs/service.md](docs/service.md)
 
-제출용 단일 Docker 이미지(LLM 없이 데모 실행, amd64·arm64): `make submit` → `dist/`, 실행 안내 [docs/SUBMISSION.md](docs/SUBMISSION.md)
+제출용 단일 Docker 이미지(Azure OpenAI GPT, 키 없으면 데모 재생, amd64·arm64): `make submit` → `dist/`, 실행 안내 [docs/SUBMISSION.md](docs/SUBMISSION.md)
 
 ## Agent 구조
 
@@ -56,7 +57,7 @@ src/req2data/
   agents/      Supervisor + 요구사항·탐색·설계·검증·리포트 Agent
   graph/       LangGraph State·그래프·라우팅
   schemas/     Pydantic 계약 (RequirementSpec, DataMapping, DatasetDesign, ReviewReport, RouteDecision)
-  llm/         LLM·임베딩 제공자 추상화 (ollama/openai/anthropic), 데모 모드
+  llm/         LLM·임베딩 제공자 추상화 (azure/ollama/openai/anthropic/gemini), 데모 모드
   rag/         카탈로그 인덱싱, Chroma+BM25 하이브리드, FK 그래프
   tools/       Agent 도구 (MCP 클라이언트 포함)
   memory/      체크포인터(단기)·Store(장기)

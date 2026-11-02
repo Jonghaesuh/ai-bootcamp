@@ -1,6 +1,6 @@
 # Req2Data Agent 제출용 Docker 이미지 실행 안내
 
-요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 자동으로 만드는 LangGraph Multi-Agent 서비스입니다. 이미지 하나에 API·UI·데이터·RAG 인덱스·데모 녹화·테스트가 모두 들어 있어, **인터넷·LLM·GPU 없이** 바로 실행됩니다.
+요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 자동으로 만드는 LangGraph Multi-Agent 서비스입니다. 이미지 하나에 API·UI·데이터·RAG 인덱스·데모 녹화·테스트가 모두 들어 있습니다. LLM은 **Azure OpenAI GPT**(`AOAI_*` 환경변수)를 쓰고, 키를 넘기지 않으면 **인터넷·LLM 없이** 녹화 재생(데모 모드)으로 실행됩니다.
 
 ## 1. 제출 파일
 
@@ -24,7 +24,7 @@ docker load -i req2data-agent-submit-amd64.tar.gz
 ## 3. 동작 확인 (브라우저 없이, 1분 안에)
 
 ```bash
-docker run --rm req2data-agent:submit test       # 테스트 72개 (LLM 불필요)
+docker run --rm req2data-agent:submit test       # 테스트 70개 + 로컬 제공자 4개 건너뜀 (LLM 불필요)
 docker run --rm req2data-agent:submit scenario   # 샘플 01 정의서를 API로 끝까지 실행하고 결과 요약
 ```
 
@@ -52,29 +52,29 @@ docker run --rm -p 8501:8501 -p 8000:8000 req2data-agent:submit
 3. 결과 탭에서 요약, 요구사항 명세, 데이터 매핑, 설계·SQL, 검증 리포트, 추적표, 진행 로그를 보고 산출물을 내려받습니다.
 4. **데이터 카탈로그** 화면에서 카탈로그·용어집·설계 가이드 검색과 테이블 프로파일을 볼 수 있습니다.
 
-데모 모드는 실제 LLM(Qwen2.5 14B)으로 실행한 응답을 녹화해 재생합니다. 재생은 녹화와 같은 입력일 때만 맞습니다. 다른 정의서나 답변을 넣으면 "🎬 데모 녹화와 다른 입력" 표시와 함께 규칙 기반 기본값으로 진행합니다.
+데모 모드(Azure 키 없이 실행)는 실제 LLM(Qwen2.5 14B)으로 실행한 응답을 녹화해 재생합니다. 재생은 녹화와 같은 입력일 때만 맞습니다. 다른 정의서나 답변을 넣으면 "🎬 데모 녹화와 다른 입력" 표시와 함께 규칙 기반 기본값으로 진행합니다.
 
-## 5. 실제 LLM으로 실행 (선택)
+## 5. Azure OpenAI(GPT)로 실행
 
-데모가 아닌 실제 실행에는 LLM이 필요합니다. 컨테이너를 실행하는 머신에서 Ollama를 띄우는 방법이 기본입니다.
-
-```bash
-ollama pull qwen2.5:14b-instruct && ollama pull bge-m3      # 약 10GB, 메모리 16GB 이상 권장
-docker run --rm -p 8501:8501 -p 8000:8000 \
-  --add-host host.docker.internal:host-gateway \
-  -e DEMO_MODE=false \
-  req2data-agent:submit
-```
-
-샘플 1건에 약 7~15분 걸립니다 (Apple M4 Pro 기준).
-
-Google Gemini를 쓰려면 다음과 같이 실행합니다. 의미 검색 임베딩(bge-m3)은 Ollama가 없으면 키워드 검색으로 대체됩니다.
+과제 실행 환경처럼 `AOAI_*` 환경변수가 있으면 그대로 넘깁니다. 키가 있으면 자동으로 실제 GPT로 실행되고(`DEMO_MODE=false`), 시작할 때 RAG 인덱스를 GPT 임베딩으로 한 번 다시 만듭니다(83개 문서, 수 초).
 
 ```bash
 docker run --rm -p 8501:8501 -p 8000:8000 \
-  -e DEMO_MODE=false -e LLM_PROVIDER=gemini -e LLM_MODEL=gemini-3.8-flash -e GOOGLE_API_KEY=<키> \
+  -e AOAI_ENDPOINT -e AOAI_API_KEY \
+  -e AOAI_DEPLOY_GPT41_MINI -e AOAI_DEPLOY_EMBED_3_SMALL \
   req2data-agent:submit
 ```
+
+| 환경변수 | 용도 | 기본값 |
+| --- | --- | --- |
+| `AOAI_ENDPOINT`, `AOAI_API_KEY` | Azure OpenAI 엔드포인트·키 (`AZURE_OPENAI_ENDPOINT`·`AZURE_OPENAI_API_KEY`도 가능) | 없음 → 데모 모드 |
+| `AOAI_DEPLOY_GPT41_MINI` | 채팅 배포 이름 | `gpt-4.1-mini` |
+| `AOAI_DEPLOY_EMBED_3_SMALL` | 임베딩 배포 이름 | `text-embedding-3-small` |
+| `AOAI_API_VERSION` | API 버전 | `2024-10-21` |
+| `AZURE_CHAT_DEPLOYMENT` | 다른 채팅 배포를 쓸 때 (예: `-e AZURE_CHAT_DEPLOYMENT=$AOAI_DEPLOY_GPT41`) | |
+| `DEMO_MODE` | `true`면 키가 있어도 녹화 재생 | 키 유무로 자동 |
+
+연결 확인: `curl localhost:8000/health` → `"llm": "azure:<배포 이름>", "demo_mode": false`. 브라우저 없이 `scenario` 명령에 같은 `-e` 옵션을 붙이면 샘플 01을 GPT로 끝까지 실행합니다.
 
 ## 6. 이미지 구성
 
@@ -84,7 +84,7 @@ docker run --rm -p 8501:8501 -p 8000:8000 \
 | `/app/ui` | Streamlit UI |
 | `/app/prompts` | Agent별 역할 프롬프트 YAML, Few-shot 예시 |
 | `/app/data` | Olist 카탈로그(한글 설명·PK/FK·시점 순서)·용어집·설계 가이드·샘플 정의서 3종, 적재된 DuckDB(`data/db/olist.duckdb`) |
-| `/app/storage/chroma` | RAG 벡터 인덱스 (bge-m3) |
+| `/app/storage/chroma` | RAG 벡터 인덱스 (bge-m3로 구축. Azure 키가 있으면 시작 시 GPT 임베딩으로 재구축) |
 | `/app/demo/recordings` | 데모 녹화 (LLM 응답·검색 순위·사용자 입력) |
 | `/app/tests` | 테스트 (`test` 명령) |
 | `/app/docs` | 기획서(`PRD.md`), Agent 구조, RAG, 서비스 설계 문서 |

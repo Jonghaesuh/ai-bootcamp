@@ -117,11 +117,12 @@ PyPI는 검사 대상이 아니라 이미지 안의 `uv sync`에는 인증서가
 
 ### LLM 제공자 선택
 
-`.env`의 `LLM_PROVIDER`·`LLM_MODEL`만 바꾸면 전체 Agent가 같은 모델로 바뀝니다. 임베딩(bge-m3)은 계속 로컬 Ollama를 씁니다.
+`.env`의 `LLM_PROVIDER`·`LLM_MODEL`만 바꾸면 전체 Agent가 같은 모델로 바뀝니다. 기본은 Azure OpenAI(GPT)이고, Ollama·Gemini·Anthropic은 `uv sync --extra local`로 설치합니다. 임베딩은 `EMBEDDING_PROVIDER`(기본 azure)로 고르고, 바꾸면 `make index`로 인덱스를 다시 만듭니다(Docker 이미지는 시작 시 자동).
 
 | 제공자 | 설정 | 비고 |
 | --- | --- | --- |
-| Ollama (기본) | `LLM_PROVIDER=ollama`, `LLM_MODEL=qwen2.5:14b-instruct` | 무료·로컬. `LLM_NUM_CTX`, `LLM_NUM_PREDICT` 적용, 구조화 출력은 JSON Schema로 디코딩 제약 |
+| Azure OpenAI (기본) | `LLM_PROVIDER=azure`, `AOAI_ENDPOINT`, `AOAI_API_KEY`, `AOAI_DEPLOY_GPT41_MINI`(배포 이름) | 과제 환경의 `AOAI_*` 변수를 그대로 사용. JSON 응답 모드, 429는 자동 재시도. 키가 없으면 서비스는 뜨고 LLM 호출만 실패해 규칙 기반 기본값으로 대체 |
+| Ollama | `LLM_PROVIDER=ollama`, `LLM_MODEL=qwen2.5:14b-instruct` | 무료·로컬. `LLM_NUM_CTX`, `LLM_NUM_PREDICT` 적용, 구조화 출력은 JSON Schema로 디코딩 제약 |
 | Google Gemini | `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.6-flash`, `GOOGLE_API_KEY=...` | 키는 Google AI Studio에서 발급. JSON 응답 모드, 429(분당 요청 제한)는 자동 재시도. Gemini 3.x는 temperature를 받지 않아 보내지 않음 |
 | OpenAI 호환 | `LLM_PROVIDER=openai`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` | |
 | Anthropic | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | |

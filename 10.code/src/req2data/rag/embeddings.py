@@ -3,9 +3,31 @@ from langchain_core.embeddings import Embeddings
 from req2data.config import Settings, get_settings
 
 
+class UnavailableEmbeddings(Embeddings):
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        raise RuntimeError("임베딩 설정 없음 (AOAI_ENDPOINT·AOAI_API_KEY)")
+
+    def embed_query(self, text: str) -> list[float]:
+        raise RuntimeError("임베딩 설정 없음 (AOAI_ENDPOINT·AOAI_API_KEY)")
+
+
 def get_embeddings(settings: Settings | None = None) -> Embeddings:
-    """한글 요구사항과 영문 컬럼명을 함께 다루므로 다국어 모델(bge-m3)을 기본으로 쓴다."""
+    """한글 요구사항과 영문 컬럼명을 함께 다루므로 다국어 임베딩을 쓴다 (기본 Azure text-embedding-3-small)."""
     s = settings or get_settings()
+    if s.embedding_provider == "azure":
+        from langchain_openai import AzureOpenAIEmbeddings
+
+        if not (s.azure_openai_endpoint and s.azure_openai_api_key):
+            return (
+                UnavailableEmbeddings()
+            )  # 의미 검색은 실패하고 BM25로 계속 (retriever._dense_rank)
+
+        return AzureOpenAIEmbeddings(
+            azure_endpoint=s.azure_openai_endpoint,
+            azure_deployment=s.azure_embedding_deployment,
+            api_key=s.azure_openai_api_key,
+            api_version=s.azure_openai_api_version,
+        )
     if s.embedding_provider == "ollama":
         from langchain_ollama import OllamaEmbeddings
 

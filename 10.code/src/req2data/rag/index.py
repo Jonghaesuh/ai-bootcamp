@@ -49,21 +49,33 @@ class KnowledgeIndex:
         if len(ids) != len(set(ids)):
             dup = sorted({i for i in ids if ids.count(i) > 1})
             raise ValueError(f"중복 문서 ID: {dup}")
+        # 임베딩을 먼저 계산해, 임베딩 서버 오류 시 기존 인덱스가 지워지지 않게 한다
+        vectors = self._embed(docs)
         try:
             self.client.delete_collection(self.collection_name)
         except Exception:
             pass
         self._collection = self._open()
-        return self.upsert(docs)
+        return self._write(docs, vectors)
 
     def upsert(self, docs: list[RagDocument]) -> int:
+        return self._write(docs, self._embed(docs))
+
+    def _embed(self, docs: list[RagDocument]) -> list[list[float]]:
+        return [
+            v
+            for i in range(0, len(docs), BATCH)
+            for v in self.embeddings.embed_documents([d.text for d in docs[i : i + BATCH]])
+        ]
+
+    def _write(self, docs: list[RagDocument], vectors: list[list[float]]) -> int:
         for i in range(0, len(docs), BATCH):
             batch = docs[i : i + BATCH]
             self._collection.upsert(
                 ids=[d.doc_id for d in batch],
                 documents=[d.text for d in batch],
                 metadatas=[d.chroma_metadata() for d in batch],
-                embeddings=self.embeddings.embed_documents([d.text for d in batch]),
+                embeddings=vectors[i : i + BATCH],
             )
         self._docs = None
         log.info("인덱스 %s: %d개 문서 반영", self.collection_name, len(docs))
@@ -71,6 +83,14 @@ class KnowledgeIndex:
 
     def count(self) -> int:
         return self._collection.count()
+
+    def built_with(self) -> str:
+        """인덱스를 만든 임베딩 이름 (예: ollama:bge-m3)."""
+        return (self._collection.metadata or {}).get("embedding", "unknown")
+
+    def is_current(self) -> bool:
+        """문서가 있고 지금 설정한 임베딩으로 만든 인덱스인지. 아니면 의미 검색 차원이 맞지 않는다."""
+        return self.count() > 0 and self.built_with() == (self.embedding_name or "unknown")
 
     def documents(self) -> list[RagDocument]:
         if self._docs is None:

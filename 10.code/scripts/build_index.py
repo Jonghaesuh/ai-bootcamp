@@ -12,12 +12,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--query", help="인덱스 구축 후 확인용 검색어")
     parser.add_argument("--source", default=None, help="catalog | glossary | guide | case")
+    parser.add_argument(
+        "--if-stale",
+        action="store_true",
+        help="지금 임베딩 설정으로 만든 인덱스가 이미 있으면 건너뛴다 (컨테이너 시작 시 사용)",
+    )
     args = parser.parse_args()
 
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     logging.getLogger("httpx").setLevel(logging.WARNING)
     s = get_settings()
     kb = KnowledgeBase.from_settings(s)
+    if args.if_stale and kb.index.is_current():
+        print(f"인덱스 최신: {s.chroma_dir} ({kb.index.built_with()}, {kb.index.count()}개 문서)")
+        return 0
     if not kb.profiles:
         print("프로파일 없음: 카탈로그 정의만 색인합니다 (make data로 적재하면 프로파일이 추가됨).")
     counts = kb.rebuild()

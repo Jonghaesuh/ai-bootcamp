@@ -5,23 +5,16 @@ description = "요구사항 정의서 → ML 데이터셋 설계(구조화·매�
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    # Agent / LLM
+    # Agent / LLM (기본 Azure OpenAI GPT. 로컬·기타 제공자는 extra `local`)
     "langgraph>=0.6",
     "langgraph-checkpoint-sqlite>=2.0",
     "langchain>=0.3",
     "langchain-core>=0.3",
-    "langchain-community>=0.3",
-    "langchain-ollama>=0.3",
     "langchain-openai>=0.3",
-    "langchain-anthropic>=0.3",
     # RAG
-    "langchain-chroma>=0.2",
     "chromadb>=1.0",
     "rank-bm25>=0.2.2",
     "networkx>=3.3",
-    # MCP
-    "mcp[cli]>=1.9",
-    "langchain-mcp-adapters>=0.1",
     # Data
     "duckdb>=1.1",
     "pandas>=2.2",
@@ -39,10 +32,17 @@ dependencies = [
     "httpx>=0.27",
     "streamlit>=1.38",
     "python-multipart>=0.0.9",
-    "langchain-google-genai>=4.4.2",
 ]
 
 [project.optional-dependencies]
+# Ollama(qwen2.5·bge-m3)·Anthropic·Gemini 제공자. Docker 이미지에는 넣지 않는다.
+local = [
+    "langchain-ollama>=0.3",
+    "langchain-anthropic>=0.3",
+    "langchain-google-genai>=4.4.2",
+]
+# MCP 카탈로그 서버 (PRD 2.5 B)
+mcp = ["mcp[cli]>=1.9", "langchain-mcp-adapters>=0.1"]
 a2a = ["a2a-sdk>=0.2"]
 
 [dependency-groups]

@@ -1,4 +1,4 @@
-# docker compose up --build                 # api + ui, Ollama는 호스트에서 실행 (macOS 기본)
+# docker compose up --build                 # api + ui. LLM은 .env의 LLM_PROVIDER (기본 azure: AOAI_* 환경변수)
 # docker compose --profile ollama up --build # Ollama도 컨테이너로 (Linux·GPU 환경)
 #   이때 .env에 OLLAMA_BASE_URL_DOCKER=http://ollama:11434 를 지정한다.
 # mcp-catalog 서비스는 PRD 2.5 B(MCP 서버) 구현 시 추가한다.
@@ -8,6 +8,8 @@ x-app: &app
     context: .
     dockerfile: docker/Dockerfile
     target: app  # 제출용 단일 이미지는 target submit (docs/SUBMISSION.md)
+    args:
+      UV_EXTRAS: ${UV_EXTRAS:---extra local}  # 로컬 개발은 Ollama 등도 설치
   image: req2data-agent:latest
   env_file: .env
   environment: &app-env
