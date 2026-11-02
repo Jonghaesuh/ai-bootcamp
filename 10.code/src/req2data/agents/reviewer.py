@@ -328,13 +328,24 @@ class Reviewer(BaseAgent):
         )
         min_ratio = cfg("review.min_target_ratio", 0.02)
         ratio = eda.target_ratio or 0
-        checks.append(
-            CheckResult(
-                name="target_ratio",
-                status=CheckStatus.warn if ratio < min_ratio else CheckStatus.passed,
-                evidence=f"타깃 비율 {ratio:.4f} (기준 {min_ratio}), 양성 {round(ratio * eda.row_count)}건",
+        if eda.row_count and ratio in (0, 1):
+            # 실제 7B 실행에서 본 실패: 타깃 조건이 잘못되어 모든 행이 양성(1.0)
+            checks.append(
+                CheckResult(
+                    name="target_ratio",
+                    status=CheckStatus.fail,
+                    evidence=f"타깃이 모든 행에서 {int(ratio)}입니다. 타깃 조건(기간·이벤트)이 잘못 구현되었는지 확인하세요.",
+                    rework_target="dataset_designer",
+                )
             )
-        )
+        else:
+            checks.append(
+                CheckResult(
+                    name="target_ratio",
+                    status=CheckStatus.warn if ratio < min_ratio else CheckStatus.passed,
+                    evidence=f"타깃 비율 {ratio:.4f} (기준 {min_ratio}), 양성 {round(ratio * eda.row_count)}건",
+                )
+            )
         missing = {"train", "val", "test"} - set(eda.split_counts)
         checks.append(
             CheckResult(

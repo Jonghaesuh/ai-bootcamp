@@ -39,6 +39,7 @@ dependencies = [
     "httpx>=0.27",
     "streamlit>=1.38",
     "python-multipart>=0.0.9",
+    "langchain-google-genai>=4.4.2",
 ]
 
 [project.optional-dependencies]
@@ -77,3 +78,6 @@ src = ["src", "tests"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 ignore = ["E501"]  # 줄 길이는 ruff format이 관리하고, 긴 한글 문자열은 허용
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query"]  # FastAPI 의존성 주입 관용구

@@ -101,85 +101,42 @@ MAPPING = {
     "rationale": "customer_id는 주문 수와 고유값이 같아 customer_unique_id를 고객 키로 사용",
 }
 
-_BASE_SQL = """
-WITH o AS (
-  SELECT c.customer_unique_id, o.order_id, o.order_purchase_timestamp,
-         row_number() OVER (PARTITION BY c.customer_unique_id ORDER BY o.order_purchase_timestamp) AS rn
-  FROM orders o JOIN customers c ON o.customer_id = c.customer_id
-  WHERE o.order_status <> 'canceled'
-), first AS (SELECT * FROM o WHERE rn = 1)
-SELECT f.customer_unique_id, f.order_purchase_timestamp AS ref_time,
-       p.payment_value AS first_amount, p.payment_installments AS installments,{extra}
-       CASE WHEN EXISTS (SELECT 1 FROM o o2 WHERE o2.customer_unique_id = f.customer_unique_id AND o2.rn = 2
-            AND o2.order_purchase_timestamp <= f.order_purchase_timestamp + INTERVAL 90 DAY) THEN 1 ELSE 0 END AS target,
-       CASE WHEN f.order_purchase_timestamp < TIMESTAMP '2017-12-01' THEN 'train'
-            WHEN f.order_purchase_timestamp < TIMESTAMP '2018-03-01' THEN 'val' ELSE 'test' END AS split
-FROM first f
-LEFT JOIN order_payments p ON p.order_id = f.order_id
-LEFT JOIN order_reviews r ON r.order_id = f.order_id
-{where}"""
-
+_PLAN = {
+    "analysis_unit": "고객",
+    "entity_key": "customers.customer_unique_id",
+    "reference_time": "orders.order_purchase_timestamp",
+    "cohort": "first_event",
+    "population_filters": ["orders.order_status <> 'canceled'"],
+    "target": {
+        "kind": "repeat_event",
+        "window_days": 90,
+        "description": "첫 구매 후 90일 내 두 번째 주문",
+    },
+}
 _FEATURES = [
     {
         "name": "first_amount",
-        "description": "첫 주문 결제 금액",
-        "source_columns": ["order_payments.payment_value"],
-        "dtype": "numeric",
+        "source_column": "order_payments.payment_value",
+        "agg": "sum",
         "requirement_ids": ["R3"],
     },
     {
         "name": "installments",
-        "description": "첫 주문 할부 개월",
-        "source_columns": ["order_payments.payment_installments"],
-        "dtype": "numeric",
+        "source_column": "order_payments.payment_installments",
+        "agg": "max",
         "requirement_ids": ["R4"],
     },
 ]
 
-_DESIGN = {
-    "analysis_unit": "고객",
-    "entity_key": "customer_unique_id",
-    "reference_time": "orders.order_purchase_timestamp",
-    "reference_time_alias": "ref_time",
-    "target": {
-        "name": "target",
-        "description": "첫 구매 후 90일 내 두 번째 주문",
-        "window_days": 90,
-        "positive_condition": "두 번째 주문이 90일 이내",
-    },
-    "population_filters": ["order_status <> 'canceled'", "고객별 첫 주문"],
-    "split": {
-        "column": "split",
-        "method": "out_of_time",
-        "train_end": "2017-12-01",
-        "val_end": "2018-03-01",
-    },
-}
-
-# v1: 리뷰 점수(배송 후 작성) 누수 + 관측 기간 절단 미처리
+# v1: 리뷰 점수(배송 후 작성) 누수
 DESIGN_V1 = {
-    **_DESIGN,
+    **_PLAN,
     "features": [
         *_FEATURES,
-        {
-            "name": "review_score",
-            "description": "첫 주문 리뷰 점수",
-            "source_columns": ["order_reviews.review_score"],
-            "dtype": "numeric",
-            "requirement_ids": [],
-        },
+        {"name": "review_score", "source_column": "order_reviews.review_score", "agg": "avg"},
     ],
-    "sql": _BASE_SQL.format(extra="\n       r.review_score,", where=""),
     "rationale": "리뷰 점수가 재구매와 관련이 클 것으로 보고 포함",
 }
 
-# v2: 피드백 반영 (누수 피처 제거, 90일 관측 불가 고객 제외)
-DESIGN_V2 = {
-    **_DESIGN,
-    "features": _FEATURES,
-    "sql": _BASE_SQL.format(
-        extra="",
-        where="WHERE f.order_purchase_timestamp <= (SELECT max(order_purchase_timestamp) FROM orders) - INTERVAL 90 DAY",
-    ),
-    "rationale": "검증 피드백에 따라 리뷰 점수를 제거하고 90일을 관측할 수 없는 고객을 제외",
-}
+# v2: 피드백 반영 (누수 피처 제거). 관측 기간 절단·분할은 SQL 빌더가 처리한다.
+DESIGN_V2 = {**_PLAN, "features": _FEATURES, "rationale": "검증 피드백에 따라 리뷰 점수를 제거"}

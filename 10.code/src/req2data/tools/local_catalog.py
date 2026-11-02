@@ -127,6 +127,13 @@ class LocalCatalogClient:
             "truncated": len(rows) > limit,
         }
 
+    def close(self) -> None:
+        """DB 재적재 전에 읽기 전용 연결을 닫는다 (다음 조회 때 다시 연다)."""
+        with self._lock:
+            if self._con is not None:
+                self._con.close()
+                self._con = None
+
     def _connection(self) -> duckdb.DuckDBPyConnection:
         if self._con is None:
             if not self.db_path.exists():

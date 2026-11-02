@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from req2data.schemas.base import LLMOutput
+
 
 class TraceabilityRow(BaseModel):
     requirement_id: str
@@ -10,7 +12,7 @@ class TraceabilityRow(BaseModel):
     check_status: str = ""
 
 
-class ReportSummary(BaseModel):
+class ReportSummary(LLMOutput):
     headline: str
     highlights: list[str] = Field(default_factory=list)
     next_actions: list[str] = Field(default_factory=list)

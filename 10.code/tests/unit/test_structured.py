@@ -35,3 +35,46 @@ def test_schema_instruction_is_appended_to_system_prompt():
     invoke_structured(llm, MESSAGES, RouteDecision, fallback=lambda: RouteDecision(next="end"))
     system = llm.calls[0]["messages"][0].content
     assert system.startswith("역할") and "출력 스키마: RouteDecision" in system
+
+
+def test_wrapped_structure_is_rejected_not_silently_empty():
+    """실제 7B 실행에서 본 실패: {"data_mapping": {...}}로 감싼 출력이 빈 DataMapping으로 통과하면 안 된다."""
+    from req2data.schemas import DataMapping
+
+    wrapped = {"data_mapping": {"source_tables": [{"table_name": "orders"}]}}
+    good = {"analysis_key": {"table": "customers", "column": "customer_unique_id"}}
+    llm = ScriptedChatModel().script("DataMapping", wrapped, good)
+    result = invoke_structured(llm, MESSAGES, DataMapping, fallback=DataMapping)
+    assert result.attempts == 2 and result.value.analysis_key.column == "customer_unique_id"
+    assert "data_mapping" in llm.calls[1]["messages"][-1].content  # 오류 내용이 재요청에 들어감
+
+
+def test_ollama_gets_json_schema_format():
+    from langchain_ollama import ChatOllama
+
+    from req2data.llm.recording import RecordReplayChatModel
+    from req2data.llm.structured import native_schema_kwargs
+
+    ollama = ChatOllama(model="x")
+    kwargs = native_schema_kwargs(ollama, RouteDecision)
+    assert kwargs["format"]["additionalProperties"] is False
+    wrapped = RecordReplayChatModel(label="json", path="x.jsonl", mode="record", inner=ollama)
+    assert native_schema_kwargs(wrapped, RouteDecision) == kwargs
+    assert native_schema_kwargs(ScriptedChatModel(), RouteDecision) == {}
+
+
+def test_transient_call_failure_is_retried():
+    """연결 끊김·타임아웃은 재시도 횟수 안에서 같은 요청을 다시 보낸다."""
+
+    class Flaky(ScriptedChatModel):
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            if not self.calls_for("RouteDecision"):
+                self.calls.append({"schema": "RouteDecision", "messages": messages})
+                raise TimeoutError("read timeout")
+            return super()._generate(messages, stop, run_manager, **kwargs)
+
+    llm = Flaky().script("RouteDecision", {"next": "reviewer"})
+    result = invoke_structured(
+        llm, MESSAGES, RouteDecision, retries=1, fallback=lambda: RouteDecision(next="end")
+    )
+    assert result.value.next == "reviewer" and result.attempts == 2 and not result.used_fallback

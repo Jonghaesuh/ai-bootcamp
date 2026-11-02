@@ -1,6 +1,8 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from req2data.schemas.base import LLMOutput
 
 AgentName = Literal[
     "requirement_analyst",
@@ -22,7 +24,7 @@ PIPELINE: tuple[AgentName, ...] = (
 )
 
 
-class RouteDecision(BaseModel):
+class RouteDecision(LLMOutput):
     """Supervisor의 라우팅 결정."""
 
     next: AgentName
@@ -30,7 +32,7 @@ class RouteDecision(BaseModel):
     instructions: str = Field(default="", description="다음 Agent에게 전달할 재작업 지시")
 
 
-class ChangeScope(BaseModel):
+class ChangeScope(LLMOutput):
     """대화형 수정 요청의 영향 범위."""
 
     changed_fields: list[str] = Field(

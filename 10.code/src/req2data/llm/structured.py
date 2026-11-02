@@ -3,6 +3,7 @@ import logging
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
@@ -41,6 +42,15 @@ def extract_json(text: str) -> str:
     return text[start : end + 1]
 
 
+def native_schema_kwargs(llm: BaseChatModel, schema: type[BaseModel]) -> dict[str, Any]:
+    """Ollama는 JSON Schema로 디코딩을 제약할 수 있다 (작은 모델이 임의 구조를 만드는 것을 막음).
+    기록 모드 래퍼는 내부 모델 기준으로 판단한다."""
+    target = getattr(llm, "inner", None) or llm
+    if type(target).__name__ == "ChatOllama":
+        return {"format": schema.model_json_schema()}
+    return {}
+
+
 def _content(message: BaseMessage) -> str:
     if isinstance(message.content, str):
         return message.content
@@ -67,10 +77,13 @@ def invoke_structured[T: BaseModel](
     error: str | None = None
     for attempt in range(1, retries + 2):
         try:
-            raw = _content(llm.invoke(convo))
-        except Exception as exc:  # 네트워크·모델 오류는 재요청해도 같은 경우가 많아 바로 대체
-            log.warning("LLM 호출 실패(%s): %s", schema.__name__, exc)
-            return StructuredResult(fallback(), attempt, used_fallback=True, error=str(exc))
+            raw = _content(llm.invoke(convo, **native_schema_kwargs(llm, schema)))
+        except (
+            Exception
+        ) as exc:  # 타임아웃·연결 끊김은 같은 요청을 다시 보내고, 재시도를 다 쓰면 대체
+            error = f"LLM 호출 실패: {exc}"
+            log.warning("LLM 호출 실패(%s, %d회차): %s", schema.__name__, attempt, exc)
+            continue
         try:
             return StructuredResult(schema.model_validate_json(extract_json(raw)), attempt)
         except (ValueError, ValidationError) as exc:

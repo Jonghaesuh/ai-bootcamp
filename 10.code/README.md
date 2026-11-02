@@ -7,7 +7,7 @@
 
 ```bash
 make setup     # .env 생성 + uv sync (Python 3.12, .venv)
-make models    # Ollama 모델: qwen2.5:7b-instruct, bge-m3
+make models    # Ollama 모델: qwen2.5:14b-instruct, bge-m3
 ```
 
 Olist 데이터: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce 의 CSV 9개를 `data/raw/olist/`에 둡니다.
@@ -16,6 +16,16 @@ Olist 데이터: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce 의
 make data      # CSV → DuckDB 적재 → 컬럼 프로파일 → RAG 인덱스 (상세: docs/rag.md)
 make index     # 인덱스만 다시 구축 (CSV 없이도 카탈로그 정의·용어집·가이드로 동작)
 ```
+
+## 실행
+
+```bash
+make run       # API http://localhost:8000/docs + UI http://localhost:8501 (Ollama는 호스트에서 실행)
+make demo      # LLM 없이 기록된 응답으로 실행
+make up        # Docker Compose
+```
+
+API·UI·데모 모드·Docker 상세: [docs/service.md](docs/service.md)
 
 ## Agent 구조
 

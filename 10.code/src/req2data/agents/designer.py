@@ -3,8 +3,17 @@ from typing import Any
 
 from req2data.agents.base import BaseAgent, as_json
 from req2data.agents.requirement import render_answered
+from req2data.agents.sql_builder import CohortSQLBuilder, PlanError
 from req2data.graph.state import Req2DataState, load
-from req2data.schemas import DataMapping, DatasetDesign, RequirementSpec, TargetDefinition
+from req2data.schemas import (
+    DataMapping,
+    DatasetDesign,
+    DesignPlan,
+    FeaturePlan,
+    RequirementSpec,
+    TargetDefinition,
+    TargetPlan,
+)
 from req2data.tools.catalog import SQLExecutionError, build_catalog_tools, schema_index
 
 
@@ -29,7 +38,8 @@ def render_schema(index: dict[str, dict[str, Any]]) -> str:
 
 
 class DatasetDesigner(BaseAgent):
-    """Plan-and-Solve 설계 → SQL 실행으로 확인 → 실패 시 SQL 수정 요청."""
+    """Plan-and-Solve로 설계 계획(DesignPlan)을 세우고, SQL은 CohortSQLBuilder가 만든다.
+    계획이 카탈로그와 맞지 않거나 실행에 실패하면 오류를 넣어 계획 수정을 요청한다."""
 
     name = "dataset_designer"
 
@@ -77,11 +87,11 @@ class DatasetDesigner(BaseAgent):
                 schema=schema,
                 notes=notes,
             ),
-            DatasetDesign,
-            fallback=lambda: fallback_design(spec, mapping),
+            DesignPlan,
+            fallback=lambda: fallback_plan(spec, mapping),
         )
-        design = result.value.model_copy(update={"version": state.get("design_version", 0) + 1})
-        design, fixes = self.verify_sql(system, design)
+        design, fixes = self.build(system, result.value, schema)
+        design = design.model_copy(update={"version": state.get("design_version", 0) + 1})
         return {
             "dataset_design": design.model_dump(mode="json"),
             "design_version": design.version,
@@ -97,28 +107,26 @@ class DatasetDesigner(BaseAgent):
             ],
         }
 
-    def verify_sql(self, system: str, design: DatasetDesign) -> tuple[DatasetDesign, int]:
-        """SQL을 실제로 실행해 행 수·타깃 비율을 채운다. 실패하면 오류를 넣어 수정을 요청한다."""
+    def build(self, system: str, plan: DesignPlan, schema: str) -> tuple[DatasetDesign, int]:
+        """계획 → SQL(코드) → 실행 확인. 계획 오류는 오류 내용을 넣어 계획 수정을 요청한다."""
+        builder = CohortSQLBuilder(self.catalog)
         attempts = self.deps.cfg("workflow.sql_fix_attempts", 1)
         for fix in range(attempts + 1):
             try:
-                return self._measure(design), fix
-            except SQLExecutionError as exc:
-                design = design.model_copy(update={"sql_error": str(exc)})
+                return self._measure(builder.build(plan)), fix
+            except (PlanError, SQLExecutionError) as exc:
+                error = str(exc)
                 if fix == attempts:
                     break
-                fixed = self.structured(
+                plan = self.structured(
                     system,
-                    self.prompt.task("fix_sql", sql=design.sql, error=str(exc)),
-                    DatasetDesign,
-                    fallback=lambda current=design: current,
+                    self.prompt.task("fix_plan", plan=as_json(plan), error=error, schema=schema),
+                    DesignPlan,
+                    fallback=lambda current=plan: current,
                 ).value
-                design = fixed.model_copy(update={"version": design.version, "sql_error": None})
-        return design, attempts
+        return failed_design(plan, error), attempts
 
     def _measure(self, design: DatasetDesign) -> DatasetDesign:
-        if not design.sql.strip():
-            raise SQLExecutionError("SQL이 비어 있습니다.")
         sql = strip_sql(design.sql)
         res = self.catalog.run_readonly_sql(
             f"SELECT count(*) AS n, avg(CAST({design.target.name} AS DOUBLE)) AS r FROM ({sql}) t"
@@ -134,17 +142,45 @@ class DatasetDesigner(BaseAgent):
         )
 
 
-def fallback_design(spec: RequirementSpec, mapping: DataMapping) -> DatasetDesign:
+def fallback_plan(spec: RequirementSpec, mapping: DataMapping) -> DesignPlan:
+    """LLM 출력 실패 시 매핑으로 만든 규칙 기반 계획. 분석 단위와 기준 이벤트 테이블이 다르면
+    (고객 단위 + 주문 시점) 첫 이벤트 코호트의 재발생 타깃으로 본다. 키·시점이 없으면 빌더가 오류를 낸다."""
+    key = mapping.analysis_key.ref if mapping.analysis_key else ""
+    ref = mapping.reference_time.ref if mapping.reference_time else ""
     days = re.search(r"(\d+)\s*일", spec.target_definition or "")
-    return DatasetDesign(
+    features = [
+        FeaturePlan(name=c.column, source_column=c.ref, requirement_ids=[item.requirement_id])
+        for item in mapping.items
+        if item.role == "feature"
+        for c in item.columns
+    ]
+    return DesignPlan(
         analysis_unit=spec.analysis_unit or "미정",
-        entity_key=mapping.analysis_key.column if mapping.analysis_key else "id",
-        reference_time=mapping.reference_time.ref if mapping.reference_time else "",
-        target=TargetDefinition(
-            description=spec.target_definition or "미정",
+        entity_key=key,
+        reference_time=ref,
+        cohort="first_event" if key.split(".")[0] != ref.split(".")[0] else "every_event",
+        target=TargetPlan(
+            kind="repeat_event",
             window_days=int(days.group(1)) if days else 30,
-            positive_condition="미정",
+            description=spec.target_definition or "미정",
+        ),
+        features=features,
+        rationale="LLM 설계 실패로 데이터 매핑에서 규칙 기반 계획을 만들었습니다.",
+    )
+
+
+def failed_design(plan: DesignPlan, error: str) -> DatasetDesign:
+    """SQL을 만들지 못한 계획. 검증 Agent가 sql_execution 미통과로 재작업을 지시한다."""
+    return DatasetDesign(
+        analysis_unit=plan.analysis_unit,
+        entity_key=plan.entity_key.split(".")[-1] or "id",
+        reference_time=plan.reference_time,
+        target=TargetDefinition(
+            description=plan.target.description,
+            window_days=max(int(plan.target.window_days), 1),
+            positive_condition=plan.target.condition or plan.target.kind,
         ),
         sql="",
-        rationale="LLM 설계 실패로 규칙 기반 골격만 만들었습니다. 검증 후 재작업합니다.",
+        sql_error=error,
+        rationale=plan.rationale,
     )

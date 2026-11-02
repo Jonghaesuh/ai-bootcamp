@@ -2,7 +2,7 @@ import string
 
 import pytest
 
-from req2data.schemas import DatasetDesign, RequirementSpec
+from req2data.schemas import DesignPlan, RequirementSpec
 from tests.conftest import ROOT
 
 AGENTS = [
@@ -42,7 +42,7 @@ def test_fewshot_excludes_eval_domain_and_ranks_by_similarity(deps):
 
 
 @pytest.mark.parametrize(
-    ("kind", "schema"), [("requirement_spec", RequirementSpec), ("dataset_design", DatasetDesign)]
+    ("kind", "schema"), [("requirement_spec", RequirementSpec), ("dataset_design", DesignPlan)]
 )
 def test_fewshot_outputs_match_schema(deps, kind, schema):
     examples = deps.fewshots.examples(kind)

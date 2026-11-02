@@ -1,8 +1,9 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
 
+from req2data.schemas.base import LLMOutput
 from req2data.schemas.routing import AgentName
 
 
@@ -11,7 +12,7 @@ class UserType(StrEnum):
     planner = "planner"  # 기획자: 비즈니스 언어 요약, 고객 확인 질문 우선
 
 
-class ClarificationQuestion(BaseModel):
+class ClarificationQuestion(LLMOutput):
     id: str = Field(description="질문 ID (예: Q1)")
     question: str
     target_field: str | None = Field(default=None, description="답변이 채우는 명세 필드")
@@ -21,7 +22,7 @@ class ClarificationQuestion(BaseModel):
     asked_by: AgentName = "requirement_analyst"
 
 
-class RequirementItem(BaseModel):
+class RequirementItem(LLMOutput):
     id: str = Field(description="요구사항 ID (예: R1)")
     text: str
     kind: Literal["population", "target", "feature", "filter", "metric", "constraint", "other"] = (
@@ -29,7 +30,7 @@ class RequirementItem(BaseModel):
     )
 
 
-class RequirementSpec(BaseModel):
+class RequirementSpec(LLMOutput):
     business_goal: str | None = None
     prediction_target: str | None = Field(
         default=None, description="예측 대상 모집단 (예: 첫 구매 고객)"

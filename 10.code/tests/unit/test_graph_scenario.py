@@ -17,7 +17,7 @@ def _run(graph, payload, config):
 def test_repurchase_scenario(deps, llm):
     llm.script("RequirementSpec", sc.SPEC_ROUND1, sc.SPEC_ROUND2)
     llm.script("DataMapping", sc.MAPPING)
-    llm.script("DatasetDesign", sc.DESIGN_V1, sc.DESIGN_V2)
+    llm.script("DesignPlan", sc.DESIGN_V1, sc.DESIGN_V2)
     # ReviewNarrative, ReportSummary는 스크립트하지 않아 fallback 경로를 탄다.
 
     graph = build_graph(deps, checkpointer=InMemorySaver())
@@ -45,10 +45,10 @@ def test_repurchase_scenario(deps, llm):
     assert "orders.fake_amount" in state["data_mapping"]["rejected_refs"]  # 환각 컬럼 제거
     assert state["rework_counts"] == {"dataset_designer": 1}
     feedback = " ".join(state["feedback"]["dataset_designer"])
-    assert "[leakage]" in feedback and "[censoring]" in feedback
+    assert "[leakage]" in feedback
 
     # Reflection: 두 번째 설계 프롬프트에 검증 피드백이 들어감
-    second_design_system = llm.calls_for("DatasetDesign")[1]["messages"][0].content
+    second_design_system = llm.calls_for("DesignPlan")[1]["messages"][0].content
     assert "이전 검증 피드백" in second_design_system and "review_score" in second_design_system
 
     review = state["review_report"]
@@ -97,7 +97,7 @@ def test_repurchase_scenario(deps, llm):
 def test_change_request_restarts_designer_only(deps, llm):
     llm.script("RequirementSpec", sc.SPEC_ROUND2)
     llm.script("DataMapping", sc.MAPPING)
-    llm.script("DatasetDesign", sc.DESIGN_V2, sc.DESIGN_V2)
+    llm.script("DesignPlan", sc.DESIGN_V2, sc.DESIGN_V2)
     llm.script(
         "ChangeScope",
         {

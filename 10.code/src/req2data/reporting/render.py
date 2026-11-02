@@ -162,3 +162,39 @@ def traceability_csv(rows: list[TraceabilityRow]) -> str:
             ]
         )
     return buf.getvalue()
+
+
+def case_markdown(
+    title: str, spec: RequirementSpec, design: DatasetDesign, review: ReviewReport | None
+) -> str:
+    """승인된 설계를 과거 사례 문서로. ## 절 단위로 청크되어 RAG 검색 대상이 된다."""
+    feats = ", ".join(f"{f.name}({', '.join(f.source_columns)})" for f in design.features)
+    lines = [
+        f"# {title}",
+        "",
+        "## 요구사항",
+        *[f"- {label}: {getattr(spec, f) or '(미정)'}" for f, label in FIELD_LABELS.items()],
+        *[f"- 제약: {c}" for c in spec.constraints],
+        "",
+        "## 데이터셋 설계",
+        f"- 분석 단위: {design.analysis_unit} (`{design.entity_key}`)",
+        f"- 기준 시점: `{design.reference_time}`",
+        f"- 타깃: {design.target.description} ({design.target.window_days}일)",
+        f"- 피처: {feats}",
+        f"- 모집단 필터: {'; '.join(design.population_filters)}",
+        f"- 분할: {design.split.method} {design.split.description}",
+        f"- 근거: {design.rationale}",
+        "",
+        "## 검증 결과",
+    ]
+    if review:
+        lines += [
+            f"- 결과: {'통과' if review.passed else '미통과'}, 모델링 실익 {review.feasibility}",
+            f"- 행 수 {design.row_count}, 타깃 비율 {design.target_ratio}",
+            *[
+                f"- {c.name}: {c.status.value} — {c.evidence}"
+                for c in review.checks
+                if c.status != CheckStatus.passed
+            ],
+        ]
+    return "\n".join(lines) + "\n"

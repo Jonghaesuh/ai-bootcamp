@@ -83,3 +83,16 @@ def test_keyword_scope_fallback():
     assert keyword_scope("분석 단위를 주문으로 바꿔줘").restart_from == "requirement_analyst"
     assert keyword_scope("결제 테이블도 써줘").restart_from == "data_explorer"
     assert keyword_scope("타깃 기간을 60일로").restart_from == "dataset_designer"
+
+
+def test_constant_target_fails_review(deps):
+    from req2data.agents.reviewer import Reviewer
+    from req2data.schemas import DatasetDesign, EDASummary
+
+    design = DatasetDesign.model_validate(DESIGN)
+    checks = Reviewer(deps).check_quality(
+        design,
+        EDASummary(row_count=500, target_ratio=1.0, split_counts={"train": 1, "val": 1, "test": 1}),
+    )
+    ratio = next(c for c in checks if c.name == "target_ratio")
+    assert ratio.status == "fail" and ratio.rework_target == "dataset_designer"

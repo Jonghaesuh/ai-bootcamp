@@ -1,32 +1,14 @@
 import pytest
 
-from req2data.rag import KnowledgeBase, KnowledgePaths
+from req2data.rag import KnowledgePaths
 from req2data.rag.documents import catalog_documents, markdown_chunks
 from req2data.rag.tokenize import tokenize
 from req2data.tools.catalog import SQLExecutionError
 from req2data.tools.local_catalog import LocalCatalogClient
 from req2data.tools.sql_guard import check_readonly_sql
 from tests.conftest import ROOT
-from tests.fixtures.rag import HashEmbeddings, build_local_db
 
 PATHS = KnowledgePaths.under(ROOT / "data")
-
-
-@pytest.fixture(scope="module")
-def kb(tmp_path_factory) -> KnowledgeBase:
-    root = tmp_path_factory.mktemp("kb")
-    paths = KnowledgePaths(
-        PATHS.catalog, root / "none.json", PATHS.glossary, PATHS.guides, root / "cases"
-    )
-    kb = KnowledgeBase(paths, HashEmbeddings(), persist_dir=root / "chroma")
-    kb.rebuild()
-    return kb
-
-
-@pytest.fixture(scope="module")
-def client(kb, tmp_path_factory) -> LocalCatalogClient:
-    db = build_local_db(tmp_path_factory.mktemp("db") / "olist.duckdb", kb.spec)
-    return LocalCatalogClient(db, kb, max_rows=50, timeout_seconds=5)
 
 
 # ---- 지식 소스 ----
@@ -182,7 +164,7 @@ def test_agents_receive_rag_context(deps, llm, client):
 
     llm.script("RequirementSpec", sc.SPEC_ROUND2)
     llm.script("DataMapping", sc.MAPPING)
-    llm.script("DatasetDesign", sc.DESIGN_V1, sc.DESIGN_V2)
+    llm.script("DesignPlan", sc.DESIGN_V1, sc.DESIGN_V2)
     graph = build_graph(replace(deps, catalog=client), checkpointer=InMemorySaver())
     config = {"configurable": {"thread_id": "rag"}}
     graph.invoke(new_project_state("rag", sc.DOCUMENT), config)
@@ -193,7 +175,7 @@ def test_agents_receive_rag_context(deps, llm, client):
     assert "비즈니스 용어집" in req_system and "glossary:재구매" in req_system
     map_task = llm.calls_for("DataMapping")[0]["messages"][1].content
     assert "glossary:재구매" in map_task and "customers.customer_unique_id" in map_task
-    design_system = llm.calls_for("DatasetDesign")[0]["messages"][0].content
+    design_system = llm.calls_for("DesignPlan")[0]["messages"][0].content
     assert "데이터셋 설계 가이드" in design_system and "guide:dataset_design_guide" in design_system
     narrative_system = llm.calls_for("ReviewNarrative")[0]["messages"][0].content
     assert "guide:dataset_design_guide" in narrative_system  # 누수·절단 실패 근거 가이드

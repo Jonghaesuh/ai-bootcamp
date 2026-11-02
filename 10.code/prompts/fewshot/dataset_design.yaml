@@ -1,89 +1,61 @@
-# 요구사항·매핑 → DatasetDesign 예시. 평가용 샘플 도메인(이커머스)은 넣지 않는다.
-- id: telecom_churn
-  domain: telecom
+# 요구사항·매핑 → DesignPlan 예시. 평가용 샘플 도메인(이커머스)은 넣지 않는다.
+- id: subscription_renewal
+  domain: media
   input: |
-    모집단: 후불 요금제 활성 가입자 / 단위: 회선 / 예측 시점: 매월 1일 / 타깃: 1개월 내 해지
-    테이블: subscribers(line_id, plan_type, activated_at), usage_monthly(line_id, month, data_gb, call_min),
-    terminations(line_id, requested_at)
+    모집단: 연간 구독을 처음 시작한 회원 / 단위: 회원 / 예측 시점: 첫 구독 결제 직후 / 타깃: 첫 결제 후 400일 내 재결제(갱신)
+    테이블: members(member_id PK, signup_channel), payments(payment_id PK, member_id FK, paid_at, amount, plan_type)
   output:
-    analysis_unit: 회선
-    entity_key: line_id
-    reference_time: snapshots.snapshot_date
-    reference_time_alias: ref_time
-    observation_window_days: 90
-    target:
-      name: target
-      description: 기준일 이후 30일 안에 해지 신청
-      window_days: 30
-      positive_condition: terminations.requested_at가 ref_time 초과, ref_time + 30일 이하
-    features:
-      - {name: tenure_days, description: 기준일까지 가입 기간, source_columns: [subscribers.activated_at], dtype: numeric, requirement_ids: [R1]}
-      - {name: avg_data_gb_3m, description: 직전 3개월 평균 데이터 사용량, source_columns: [usage_monthly.data_gb], dtype: numeric, requirement_ids: [R2]}
+    analysis_unit: 회원
+    entity_key: members.member_id
+    reference_time: payments.paid_at
+    cohort: first_event
     population_filters:
-      - plan_type = 'postpaid'
-      - 기준일에 활성 상태
-      - 기준일이 데이터 마지막 날짜 - 30일 이하
-    split:
-      column: split
-      method: out_of_time
-      train_end: '2024-06-01'
-      val_end: '2024-09-01'
-      description: 기준일 기준 시간 순 분할
-    sql: |
-      WITH snapshots AS (
-        SELECT s.line_id, d.snapshot_date
-        FROM subscribers s
-        CROSS JOIN (SELECT DISTINCT date_trunc('month', month) AS snapshot_date FROM usage_monthly) d
-        WHERE s.plan_type = 'postpaid' AND s.activated_at < d.snapshot_date
-          AND d.snapshot_date <= (SELECT max(requested_at) FROM terminations) - INTERVAL 30 DAY
-      )
-      SELECT sn.line_id, sn.snapshot_date AS ref_time,
-             date_diff('day', s.activated_at, sn.snapshot_date) AS tenure_days,
-             (SELECT avg(u.data_gb) FROM usage_monthly u
-               WHERE u.line_id = sn.line_id AND u.month >= sn.snapshot_date - INTERVAL 3 MONTH
-                 AND u.month < sn.snapshot_date) AS avg_data_gb_3m,
-             CASE WHEN EXISTS (SELECT 1 FROM terminations t WHERE t.line_id = sn.line_id
-                    AND t.requested_at > sn.snapshot_date
-                    AND t.requested_at <= sn.snapshot_date + INTERVAL 30 DAY) THEN 1 ELSE 0 END AS target,
-             CASE WHEN sn.snapshot_date < DATE '2024-06-01' THEN 'train'
-                  WHEN sn.snapshot_date < DATE '2024-09-01' THEN 'val' ELSE 'test' END AS split
-      FROM snapshots sn JOIN subscribers s USING (line_id)
-    rationale: 단위는 회선, 기준 시점은 매월 1일 스냅샷. 사용량은 기준일 이전 3개월만 집계해 누수를 막았고, 30일을 관측할 수 없는 마지막 달은 제외했다. 분할은 기준일 시간 순.
+      - payments.plan_type = 'annual'
+    target:
+      kind: repeat_event
+      window_days: 400
+      description: 첫 연간 결제 후 400일 안에 다음 결제(갱신)
+    features:
+      - {name: first_amount, source_column: payments.amount, agg: sum, requirement_ids: [R3]}
+      - {name: signup_channel, source_column: members.signup_channel, agg: first, requirement_ids: [R4]}
+    rationale: 행동(갱신 독려) 대상이 회원이라 회원 단위, 첫 결제 시점을 기준으로 다음 결제를 타깃으로 했다. 피처는 첫 결제 시점에 알 수 있는 값만 썼다.
 - id: card_delinquency
   domain: finance
   input: |
-    모집단: 승인된 신규 발급 신청 / 단위: 신청 건 / 예측 시점: 심사 시점 / 타깃: 발급 후 6개월 내 30일 이상 연체
-    테이블: applications(app_id, applied_at, income, approved), statements(app_id, due_date, days_past_due)
+    모집단: 승인된 신규 발급 신청 / 단위: 신청 건 / 예측 시점: 심사 시점 / 타깃: 발급 후 180일 내 30일 이상 연체
+    테이블: applications(app_id PK, applied_at, income, approved), statements(statement_id PK, app_id FK, due_date, days_past_due)
   output:
     analysis_unit: 발급 신청 건
-    entity_key: app_id
+    entity_key: applications.app_id
     reference_time: applications.applied_at
-    reference_time_alias: ref_time
-    observation_window_days: null
-    target:
-      name: target
-      description: 발급 후 180일 안에 30일 이상 연체
-      window_days: 180
-      positive_condition: statements.days_past_due >= 30 이고 due_date가 ref_time 이후 180일 이내
-    features:
-      - {name: income, description: 신청서 기재 소득, source_columns: [applications.income], dtype: numeric, requirement_ids: [R1]}
+    cohort: every_event
     population_filters:
-      - approved = true
-      - applied_at <= 데이터 마지막 날짜 - 180일
-    split:
-      column: split
-      method: out_of_time
-      train_end: '2023-07-01'
-      val_end: '2023-10-01'
-      description: 신청 시각 기준 시간 순 분할
-    sql: |
-      SELECT a.app_id, a.applied_at AS ref_time, a.income,
-             CASE WHEN max(CASE WHEN s.days_past_due >= 30
-                   AND s.due_date <= a.applied_at + INTERVAL 180 DAY THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END AS target,
-             CASE WHEN a.applied_at < DATE '2023-07-01' THEN 'train'
-                  WHEN a.applied_at < DATE '2023-10-01' THEN 'val' ELSE 'test' END AS split
-      FROM applications a LEFT JOIN statements s USING (app_id)
-      WHERE a.approved
-        AND a.applied_at <= (SELECT max(due_date) FROM statements) - INTERVAL 180 DAY
-      GROUP BY a.app_id, a.applied_at, a.income
-    rationale: 심사 시점에는 신청서 정보만 쓸 수 있어 명세서(statements) 정보는 타깃에만 사용했다. 180일을 관측할 수 없는 최근 신청은 제외했다.
+      - applications.approved = true
+    target:
+      kind: condition
+      window_days: 180
+      condition: statements.days_past_due >= 30 AND statements.due_date <= applications.applied_at + INTERVAL 180 DAY
+      description: 발급 후 180일 안에 30일 이상 연체
+    features:
+      - {name: income, source_column: applications.income, agg: first, requirement_ids: [R1]}
+    rationale: 심사 시점에는 신청서 정보만 알 수 있어 명세서(statements)는 타깃 조건에만 썼다.
+- id: hospital_readmission
+  domain: healthcare
+  input: |
+    모집단: 퇴원한 입원 건 / 단위: 입원 건 / 예측 시점: 퇴원 시각 / 타깃: 같은 환자의 30일 내 재입원
+    테이블: patients(patient_id PK, age_group), admissions(admission_id PK, patient_id FK, admitted_at, discharged_at, diagnosis), procedures(procedure_id PK, admission_id FK, cost)
+  output:
+    analysis_unit: 입원 건
+    entity_key: patients.patient_id
+    reference_time: admissions.discharged_at
+    cohort: every_event
+    population_filters: []
+    target:
+      kind: repeat_event
+      window_days: 30
+      description: 퇴원 후 30일 안에 같은 환자의 다음 입원
+    features:
+      - {name: diagnosis, source_column: admissions.diagnosis, agg: first, requirement_ids: [R2]}
+      - {name: procedure_cost, source_column: procedures.cost, agg: sum, requirement_ids: [R3]}
+      - {name: n_procedures, source_column: procedures.procedure_id, agg: count, requirement_ids: [R3]}
+    rationale: 입원마다 예측하므로 every_event, 같은 환자의 다음 입원을 타깃으로 하려고 분석 키를 환자 ID로 두었다. 시술 정보는 입원 건 단위로 합계·건수로 집계했다.

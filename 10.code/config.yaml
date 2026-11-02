@@ -4,7 +4,7 @@ workflow:
   max_react_steps: 12         # ReAct Agent 1회 실행당 최대 도구 호출 수
   structured_output_retries: 1  # 스키마 검증 실패 시 재요청 횟수 (이후 규칙 기반 기본값)
   react_enabled: true         # false면 고정 선행 조회만 하고 ReAct 추가 조사는 건너뜀
-  sql_fix_attempts: 1         # 설계 SQL 실행 실패 시 LLM 수정 요청 횟수
+  sql_fix_attempts: 2         # 설계 SQL 실행 실패 시 LLM 수정 요청 횟수 (스키마와 오류를 함께 제공)
 
 requirement:
   required_fields:            # 비어 있으면 확인 질문으로 분기

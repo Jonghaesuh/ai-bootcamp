@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from req2data.schemas.base import LLMOutput
 from req2data.schemas.requirement import ClarificationQuestion
 from req2data.schemas.routing import AgentName
 
@@ -44,7 +45,7 @@ class ReviewReport(BaseModel):
     summary: str = ""
 
 
-class ReviewNarrative(BaseModel):
+class ReviewNarrative(LLMOutput):
     """검증 Agent의 LLM 부분 출력. 판정은 규칙이 하고 LLM은 설명만 쓴다."""
 
     summary: str

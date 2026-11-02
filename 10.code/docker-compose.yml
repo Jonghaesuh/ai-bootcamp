@@ -1,0 +1,60 @@
+# docker compose up --build                 # api + ui, Ollama는 호스트에서 실행 (macOS 기본)
+# docker compose --profile ollama up --build # Ollama도 컨테이너로 (Linux·GPU 환경)
+#   이때 .env에 OLLAMA_BASE_URL_DOCKER=http://ollama:11434 를 지정한다.
+# mcp-catalog 서비스는 PRD 2.5 B(MCP 서버) 구현 시 추가한다.
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: req2data-agent:latest
+  env_file: .env
+  environment: &app-env
+    # macOS의 컨테이너 Ollama는 Metal GPU를 못 써 매우 느리므로 호스트 Ollama를 기본으로 쓴다.
+    OLLAMA_BASE_URL: ${OLLAMA_BASE_URL_DOCKER:-http://host.docker.internal:11434}
+    # LLM_RECORD=true docker compose up / DEMO_MODE=true docker compose up
+    LLM_RECORD: ${LLM_RECORD:-false}
+    DEMO_MODE: ${DEMO_MODE:-false}
+  extra_hosts:
+    - "host.docker.internal:host-gateway"  # Linux에서도 host.docker.internal 사용
+  volumes:
+    - ./data:/app/data
+    - ./storage:/app/storage
+    - ./demo:/app/demo
+    - ./prompts:/app/prompts
+    - ./config.yaml:/app/config.yaml:ro
+
+services:
+  api:
+    <<: *app
+    command: ["uvicorn", "req2data.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  ui:
+    <<: *app
+    command: ["streamlit", "run", "ui/app.py", "--server.port", "8501", "--server.address", "0.0.0.0"]
+    environment:
+      <<: *app-env
+      API_BASE_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      api:
+        condition: service_healthy
+
+  ollama:
+    image: ollama/ollama:0.40.12
+    profiles: ["ollama"]
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+
+volumes:
+  ollama:

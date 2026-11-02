@@ -48,7 +48,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | requirement_analyst | `prompts/requirement_analyst.yaml` + 동적 Few-shot | Structured Output | `RequirementSpec`, `ClarificationQuestion[]` |
 | data_explorer | `prompts/data_explorer.yaml` | 고정 선행 조회 → (선택) ReAct → Structured Output → 스키마 대조로 환각 제거 | `DataMapping` |
-| dataset_designer | `prompts/dataset_designer.yaml` + 동적 Few-shot | Plan-and-Solve → (선택) ReAct → Structured Output → SQL 실행 확인·1회 수정 | `DatasetDesign` |
+| dataset_designer | `prompts/dataset_designer.yaml` + 동적 Few-shot | Plan-and-Solve → (선택) ReAct → Structured Output으로 `DesignPlan` → `CohortSQLBuilder`가 SQL 생성·실행 확인 → 계획 오류면 오류·스키마를 넣어 계획 수정(최대 2회) | `DatasetDesign` |
 | reviewer | `prompts/reviewer.yaml` | 규칙 검사(판정) + LLM 요약(설명만) | `ReviewReport` |
 | report (노드) | `prompts/report.yaml` | 템플릿 + 사용자 유형별 LLM 요약 | 산출물 파일, `TraceabilityRow[]` |
 
@@ -79,6 +79,21 @@ LLM 호출 → JSON 추출 → Pydantic 검증
 ### Reflection
 
 - `reviewer`가 남긴 피드백은 `state.feedback[agent]`에 쌓이고, 다음 시도의 시스템 프롬프트 "이전 검증 피드백"에 들어갑니다.
+
+### 설계 계획과 SQL 빌더 (`agents/sql_builder.py`)
+
+LLM은 **무엇을** 정하고 코드는 **어떻게**를 책임집니다. 로컬 7B·14B 모델이 마트 SQL을 직접 쓰면 코호트·윈도우·CTE 범위·형변환 오류가 반복되어(docs/service.md 6절) 이렇게 나눴습니다.
+
+| LLM이 정하는 것 (`DesignPlan`) | 코드가 만드는 것 |
+| --- | --- |
+| 분석 키 `entity_key`, 기준 시점 `reference_time` (모두 `table.column`) | 기준 이벤트 테이블의 모집단 CTE, FK 그래프 조인 |
+| 코호트 `first_event` / `every_event` | 분석 단위별 첫 이벤트 선택 (`row_number`) |
+| 모집단 조건식 | 카탈로그 컬럼 검증 후 WHERE |
+| 타깃 `repeat_event`(기간 안 다음 이벤트) / `condition`(조건식), 기간 | 타깃 서브쿼리, 관측 기간 절단(데이터 끝 − 기간). `condition`은 조건 컬럼이 기준 시점보다 늦게 확정되면 실제 지연의 99분위로 기간을 늘리고, 조건 컬럼이 비어 판정할 수 없는 행은 제외 |
+| 피처: 원천 컬럼 + 집계(`first`, `sum`, `avg`, `min`, `max`, `count`, `count_distinct`) | 이벤트 ID 단위로 미리 집계한 서브쿼리 (1:N 테이블도 행이 늘지 않음), 문자열 sum·avg는 first로 보정 |
+| — | 기준 시점 70%·85% 분위로 train/val/test 시간 순 분할 |
+
+계획이 카탈로그와 맞지 않으면 `PlanError`가 고칠 방법을 담은 메시지(예: "customers에 nope 컬럼이 없습니다. 사용 가능한 컬럼: …")를 내고, 설계 Agent가 이를 넣어 계획 수정을 요청합니다. LLM 출력이 아예 실패하면 데이터 매핑에서 규칙 기반 계획을 만듭니다. 누수 판정은 계속 검증 Agent가 맡습니다(역할 분리).
 
 ### 검증 규칙 (`agents/reviewer.py`)
 
@@ -112,4 +127,4 @@ Agent는 `CatalogClient` 프로토콜에만 의존합니다. 지금은 테스트
 - `mcp-catalog` 서버와 MCP 기반 `CatalogClient` (지금은 `tools/local_catalog.py`가 같은 프로토콜로 DuckDB·RAG에 직접 연결. RAG 구성은 [rag.md](rag.md))
 - Few-shot 예시의 벡터 검색 전환, 승인 흐름과 연결된 장기 기억(사례 추가 API `KnowledgeBase.add_case`만 있음)
 - 데이터셋 parquet 내보내기(MCP 서버 도구로 추가 예정)
-- 데모 모드(기록 응답 재생), FastAPI·Streamlit
+- (서비스·데모 모드·패키징은 구현 완료: [service.md](service.md))

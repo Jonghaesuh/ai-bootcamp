@@ -13,6 +13,9 @@ def get_chat_model(settings: Settings | None = None, *, json_mode: bool = False)
             model=s.llm_model,
             base_url=s.ollama_base_url,
             temperature=s.llm_temperature,
+            num_ctx=s.llm_num_ctx,
+            num_predict=s.llm_num_predict,
+            client_kwargs={"timeout": s.llm_timeout_seconds},
             format="json" if json_mode else None,
         )
     if s.llm_provider == "openai":
@@ -31,5 +34,19 @@ def get_chat_model(settings: Settings | None = None, *, json_mode: bool = False)
 
         return ChatAnthropic(
             model=s.llm_model, api_key=s.anthropic_api_key, temperature=s.llm_temperature
+        )
+    if s.llm_provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        if not s.google_api_key:
+            raise ValueError("LLM_PROVIDER=gemini에는 GOOGLE_API_KEY가 필요합니다.")
+        # Gemini 3.x는 temperature 등 샘플링 파라미터가 폐기되어 넘기지 않는다 (통합 라이브러리가 모델별로 처리).
+        return ChatGoogleGenerativeAI(
+            model=s.llm_model,
+            google_api_key=s.google_api_key,
+            max_output_tokens=s.llm_num_predict,
+            max_retries=6,  # 무료 등급 분당 요청 제한(429) 시 지수 백오프 재시도
+            timeout=s.llm_timeout_seconds,
+            response_mime_type="application/json" if json_mode else None,
         )
     raise ValueError(f"지원하지 않는 LLM 제공자: {s.llm_provider}")

@@ -1,5 +1,6 @@
 """하이브리드 검색: 용어집 쿼리 확장 → 의미 검색(Chroma) + 키워드 검색(BM25) → RRF 결합 → 소스 필터."""
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -9,6 +10,8 @@ from req2data.rag.documents import RagDocument
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.sources import GlossaryTerm
 from req2data.rag.tokenize import tokenize
+
+log = logging.getLogger(__name__)
 
 
 def _squash(text: str) -> str:
@@ -78,7 +81,7 @@ class HybridRetriever:
         k = k or self.top_k
         expanded = self.expand_query(query)
         rankings = {
-            "dense": self.index.dense(expanded.text, self.candidate_k, sources),
+            "dense": self._dense_rank(expanded.text, sources),
             "bm25": self._bm25_rank(expanded.text, sources),
         }
         docs = {d.doc_id: d for d in self.index.documents()}
@@ -92,6 +95,14 @@ class HybridRetriever:
                 hit.score += w / (self.rrf_k + rank)
                 hit.ranks[name] = rank
         return sorted(fused.values(), key=lambda h: -h.score)[:k]
+
+    def _dense_rank(self, query: str, sources: list[str] | None) -> list[str]:
+        """임베딩 서버가 없으면(데모 모드, Ollama 중단) 키워드 검색만으로 계속한다."""
+        try:
+            return self.index.dense(query, self.candidate_k, sources)
+        except Exception as exc:
+            log.warning("의미 검색 실패, BM25만 사용: %s", exc)
+            return []
 
     def _bm25_rank(self, query: str, sources: list[str] | None) -> list[str]:
         docs = self.index.documents()

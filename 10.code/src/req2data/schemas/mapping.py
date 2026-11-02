@@ -1,9 +1,11 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import Field
+
+from req2data.schemas.base import LLMOutput
 
 
-class ColumnRef(BaseModel):
+class ColumnRef(LLMOutput):
     table: str
     column: str
 
@@ -17,7 +19,7 @@ class ColumnRef(BaseModel):
         return cls(table=table, column=column)
 
 
-class MappingItem(BaseModel):
+class MappingItem(LLMOutput):
     requirement_id: str
     role: Literal["key", "target", "feature", "filter", "time"] = "feature"
     columns: list[ColumnRef] = Field(default_factory=list)
@@ -27,13 +29,13 @@ class MappingItem(BaseModel):
     note: str = ""
 
 
-class JoinStep(BaseModel):
+class JoinStep(LLMOutput):
     left: ColumnRef
     right: ColumnRef
     how: Literal["inner", "left"] = "left"
 
 
-class DataMapping(BaseModel):
+class DataMapping(LLMOutput):
     analysis_key: ColumnRef | None = Field(default=None, description="분석 단위 키")
     reference_time: ColumnRef | None = Field(default=None, description="기준 시점 컬럼")
     items: list[MappingItem] = Field(default_factory=list)

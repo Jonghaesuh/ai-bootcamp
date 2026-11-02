@@ -1,4 +1,12 @@
-from req2data.schemas.design import DatasetDesign, FeatureSpec, SplitRule, TargetDefinition
+from req2data.schemas.design import (
+    DatasetDesign,
+    DesignPlan,
+    FeaturePlan,
+    FeatureSpec,
+    SplitRule,
+    TargetDefinition,
+    TargetPlan,
+)
 from req2data.schemas.mapping import ColumnRef, DataMapping, JoinStep, MappingItem
 from req2data.schemas.report import ReportSummary, TraceabilityRow
 from req2data.schemas.requirement import (
@@ -26,7 +34,9 @@ __all__ = [
     "ColumnRef",
     "DataMapping",
     "DatasetDesign",
+    "DesignPlan",
     "EDASummary",
+    "FeaturePlan",
     "FeatureSpec",
     "JoinStep",
     "MappingItem",
@@ -38,6 +48,7 @@ __all__ = [
     "RouteDecision",
     "SplitRule",
     "TargetDefinition",
+    "TargetPlan",
     "TraceabilityRow",
     "UserType",
 ]
