@@ -27,6 +27,8 @@ make up        # Docker Compose
 
 API·UI·데모 모드·Docker 상세: [docs/service.md](docs/service.md)
 
+제출용 단일 Docker 이미지(LLM 없이 데모 실행, amd64·arm64): `make submit` → `dist/`, 실행 안내 [docs/SUBMISSION.md](docs/SUBMISSION.md)
+
 ## Agent 구조
 
 설계 문서: [docs/agent-architecture.md](docs/agent-architecture.md)

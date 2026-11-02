@@ -4,11 +4,13 @@
 .pytest_cache
 .ruff_cache
 .vscode
+.claude
 **/__pycache__
-data
-storage
-demo
-tests
-docs
-*.md
-!README.md
+**/.DS_Store
+dist
+# 원천 CSV는 이미지에 넣지 않는다 (적재된 data/db/olist.duckdb를 넣음)
+data/raw
+# 프로젝트 실행 상태·산출물은 컨테이너마다 새로 시작 (RAG 인덱스 storage/chroma만 포함)
+storage/checkpoints
+storage/store
+storage/artifacts

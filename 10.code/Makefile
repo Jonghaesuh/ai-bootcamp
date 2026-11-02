@@ -1,4 +1,4 @@
-.PHONY: setup env models data index mcp api ui run demo record up up-demo down test test-llm lint
+.PHONY: setup env models data index mcp api ui run demo record up up-demo down submit test test-llm lint
 
 setup: env
 	uv sync --all-groups --extra a2a
@@ -54,6 +54,16 @@ up-demo:
 
 test:
 	uv run pytest -m "not llm"
+
+# 제출용 단일 이미지 (amd64·arm64) → dist/*.tar.gz. 실행 안내: docs/SUBMISSION.md
+submit:
+	mkdir -p dist
+	for arch in amd64 arm64; do \
+		docker buildx build -f docker/Dockerfile --target submit --platform linux/$$arch -t req2data-agent:submit --load . && \
+		docker save req2data-agent:submit | gzip -1 > dist/req2data-agent-submit-$$arch.tar.gz; \
+	done
+	cp docs/SUBMISSION.md dist/
+	cd dist && shasum -a 256 *.tar.gz > SHA256SUMS
 
 # Ollama가 필요한 테스트 (실제 bge-m3 검색 품질 등)
 test-llm:

@@ -8,6 +8,7 @@ from rank_bm25 import BM25Okapi
 
 from req2data.rag.documents import RagDocument
 from req2data.rag.index import KnowledgeIndex
+from req2data.rag.recording import DenseRecorder
 from req2data.rag.sources import GlossaryTerm
 from req2data.rag.tokenize import tokenize
 
@@ -63,6 +64,7 @@ class HybridRetriever:
         self.weights = weights or {"dense": 0.5, "bm25": 0.5}
         self.candidate_k = candidate_k
         self._bm25: tuple[int, BM25Okapi, list[RagDocument]] | None = None
+        self.dense_recorder: DenseRecorder | None = None  # 데모 기록·재생 (rag/recording.py)
 
     def expand_query(self, query: str) -> ExpandedQuery:
         """용어집 표면형이 쿼리에 있으면 동의어와 관련 컬럼을 덧붙인다 (예: 재구매 → 두 번째 주문, repeat purchase)."""
@@ -97,12 +99,19 @@ class HybridRetriever:
         return sorted(fused.values(), key=lambda h: -h.score)[:k]
 
     def _dense_rank(self, query: str, sources: list[str] | None) -> list[str]:
-        """임베딩 서버가 없으면(데모 모드, Ollama 중단) 키워드 검색만으로 계속한다."""
+        """임베딩 서버가 없으면(Ollama 중단) 키워드 검색만으로 계속한다. 데모 모드면 기록된 순위를 먼저 쓴다."""
+        rec = self.dense_recorder
+        key = rec.key(query, sources, self.candidate_k) if rec else ""
+        if rec and (recorded := rec.get(key)) is not None:
+            return recorded
         try:
-            return self.index.dense(query, self.candidate_k, sources)
+            ids = self.index.dense(query, self.candidate_k, sources)
         except Exception as exc:
             log.warning("의미 검색 실패, BM25만 사용: %s", exc)
             return []
+        if rec:
+            rec.put(key, ids)
+        return ids
 
     def _bm25_rank(self, query: str, sources: list[str] | None) -> list[str]:
         docs = self.index.documents()

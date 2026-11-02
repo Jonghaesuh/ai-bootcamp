@@ -65,6 +65,7 @@ packages = ["src/req2data", "src/mcp_catalog"]
 testpaths = ["tests"]
 pythonpath = ["src"]
 asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "llm: LLM(Ollama 등) 호출이 필요한 테스트",
     "integration: DB·인덱스가 준비되어야 하는 통합 테스트",

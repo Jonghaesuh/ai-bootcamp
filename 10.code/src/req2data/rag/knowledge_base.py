@@ -18,6 +18,8 @@ from req2data.rag.embeddings import get_embeddings
 from req2data.rag.fk_graph import FKGraph
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.profiling import load_profiles
+from req2data.rag.recording import RECORD_FILE as RETRIEVAL_FILE
+from req2data.rag.recording import DenseRecorder
 from req2data.rag.retriever import HybridRetriever
 from req2data.rag.sources import CatalogSpec, load_catalog_spec, load_glossary
 
@@ -69,13 +71,19 @@ class KnowledgeBase:
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> "KnowledgeBase":
         s = settings or get_settings()
-        return cls(
+        kb = cls(
             KnowledgePaths.under(s.data_dir),
             get_embeddings(s),
             persist_dir=s.chroma_dir,
             rag_policy=s.policy.get("rag", {}),
             embedding_name=f"{s.embedding_provider}:{s.embedding_model}",
         )
+        if s.demo_mode or s.llm_record:
+            kb.retriever.dense_recorder = DenseRecorder(
+                Path(s.demo_recordings_dir) / RETRIEVAL_FILE,
+                "replay" if s.demo_mode else "record",
+            )
+        return kb
 
     def documents(self) -> list[RagDocument]:
         return [
