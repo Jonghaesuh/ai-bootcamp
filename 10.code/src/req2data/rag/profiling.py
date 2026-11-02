@@ -51,7 +51,7 @@ def profile_tables(con: duckdb.DuckDBPyConnection, spec: CatalogSpec) -> dict[st
         for c in t.columns:
             ranged = c.type in NUMERIC or c.type == "TIMESTAMP"
             nulls, distinct, lo, hi = con.execute(
-                f"SELECT count(*) - count({c.name}), approx_count_distinct({c.name}), "
+                f"SELECT count(*) - count({c.name}), count(DISTINCT {c.name}), "
                 + (f"min({c.name}), max({c.name}) " if ranged else "NULL, NULL ")
                 + f"FROM {t.name}"
             ).fetchone()

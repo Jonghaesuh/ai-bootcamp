@@ -89,7 +89,7 @@ class LocalCatalogClient:
         if self.kb.spec.column(f"{table}.{column}") is None:
             raise KeyError(f"카탈로그에 없는 컬럼: {table}.{column}")
         row = self.run_readonly_sql(
-            f"SELECT count(*), count(*) - count({column}), approx_count_distinct({column}) FROM {table}"
+            f"SELECT count(*), count(*) - count({column}), count(DISTINCT {column}) FROM {table}"
         )["rows"][0]
         n, nulls, distinct = row
         return {

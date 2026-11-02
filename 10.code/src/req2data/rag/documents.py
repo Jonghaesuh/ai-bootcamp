@@ -85,7 +85,7 @@ def _column_doc(t: TableSpec, c: ColumnSpec, profile: dict[str, Any] | None) -> 
         lines.append(f"주의: {c.note}")
     if profile:
         lines.append(
-            f"프로파일: 결측률 {profile.get('null_ratio')}, 고유값 약 {profile.get('distinct')}, "
+            f"프로파일: 결측률 {profile.get('null_ratio')}, 고유값 {profile.get('distinct')}, "
             f"범위 {profile.get('min')} ~ {profile.get('max')}, 예시 {profile.get('examples')}"
         )
     return RagDocument(
