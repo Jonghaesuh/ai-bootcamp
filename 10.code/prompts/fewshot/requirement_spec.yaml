@@ -1,0 +1,91 @@
+# 요구사항 정의서 → RequirementSpec 예시.
+# 평가용 샘플(이커머스 재구매·배송 지연·불만 리뷰)과 같은 도메인의 예시는 넣지 않는다.
+- id: telecom_churn
+  domain: telecom
+  input: |
+    리텐션팀입니다. 다음 달 해지할 것 같은 후불 요금제 가입자를 미리 찾아 상담 전화를 걸고 싶습니다.
+    매월 1일에 대상 목록을 받으면 좋겠고, 상담 인력이 월 2천 명까지 가능합니다.
+  output:
+    business_goal: 해지 가능성이 높은 가입자에게 선제 상담을 해 해지를 줄인다
+    prediction_target: 후불 요금제 활성 가입자
+    analysis_unit: 가입자(회선)
+    prediction_time: 매월 1일
+    target_definition: 기준일 이후 1개월 내 해지 신청
+    success_metric: null
+    constraints: [월 상담 가능 인원 2천 명]
+    requirement_items:
+      - {id: R1, text: 후불 요금제 가입자 대상, kind: population}
+      - {id: R2, text: 다음 달 해지 여부 예측, kind: target}
+      - {id: R3, text: 매월 1일 대상 목록 제공, kind: constraint}
+      - {id: R4, text: 월 2천 명 상담 가능, kind: constraint}
+    open_questions:
+      - id: Q1
+        question: 모델 성공 여부를 어떤 지표로 판단할까요?
+        target_field: success_metric
+        options: [상위 2천 명 중 실제 해지자 비율, 해지 방어율]
+        default_option: 상위 2천 명 중 실제 해지자 비율
+        reason: 상담 인원 제약이 있어 상위 N명 정밀도가 실제 효과와 가깝다
+      - id: Q2
+        question: 번호이동과 단순 해지를 모두 해지로 볼까요?
+        target_field: target_definition
+        options: [모두 포함, 번호이동만]
+        default_option: 모두 포함
+        reason: 타깃 정의에 따라 양성 비율이 크게 달라진다
+    rationale: 행동(상담)의 대상과 시점에서 모집단·예측 시점을 정했고, 성공 지표와 해지 범위가 빠져 질문으로 남겼다.
+- id: card_delinquency
+  domain: finance
+  input: |
+    신용카드 신규 발급 고객 중 6개월 안에 30일 이상 연체할 고객을 발급 심사 단계에서 걸러내고 싶습니다.
+    AUC 0.75 이상이면 도입을 검토합니다. 외부 신용정보는 사용할 수 없습니다.
+  output:
+    business_goal: 발급 심사 단계에서 연체 위험 고객을 걸러 손실을 줄인다
+    prediction_target: 신용카드 신규 발급 신청 고객
+    analysis_unit: 발급 신청 건
+    prediction_time: 발급 심사 시점
+    target_definition: 발급 후 6개월 내 30일 이상 연체 발생
+    success_metric: AUC 0.75 이상
+    constraints: [외부 신용정보 사용 불가]
+    requirement_items:
+      - {id: R1, text: 신규 발급 고객 대상, kind: population}
+      - {id: R2, text: 6개월 내 30일 이상 연체 예측, kind: target}
+      - {id: R3, text: 심사 단계에서 사용, kind: constraint}
+      - {id: R4, text: AUC 0.75 이상, kind: metric}
+      - {id: R5, text: 외부 신용정보 사용 불가, kind: constraint}
+    open_questions:
+      - id: Q1
+        question: 심사에서 거절된 신청 건은 연체 여부를 알 수 없는데, 학습 대상에서 제외할까요?
+        target_field: prediction_target
+        options: [제외, 거절 건 추정치 사용]
+        default_option: 제외
+        reason: 거절 건은 타깃을 관측할 수 없어 표본 편향이 생긴다
+    rationale: 필수 항목이 모두 명시됐고, 거절 건 처리만 설계에 영향이 커 질문으로 남겼다.
+- id: subscription_renewal
+  domain: media
+  input: |
+    연간 구독 회원 중 갱신하지 않을 회원에게 만료 한 달 전에 할인 혜택을 주고 싶어요.
+  output:
+    business_goal: 미갱신 가능성이 높은 회원에게 할인 혜택을 줘 갱신률을 높인다
+    prediction_target: 연간 구독 회원
+    analysis_unit: 회원
+    prediction_time: 구독 만료 30일 전
+    target_definition: null
+    success_metric: null
+    constraints: []
+    requirement_items:
+      - {id: R1, text: 연간 구독 회원 대상, kind: population}
+      - {id: R2, text: 미갱신 예측, kind: target}
+      - {id: R3, text: 만료 한 달 전 혜택 제공, kind: constraint}
+    open_questions:
+      - id: Q1
+        question: 만료일 이후 며칠 안에 다시 결제하면 갱신으로 볼까요?
+        target_field: target_definition
+        options: [만료일 당일까지, 만료 후 7일까지, 만료 후 30일까지]
+        default_option: 만료 후 7일까지
+        reason: 갱신 판단 기간이 정의서에 없다
+      - id: Q2
+        question: 성공 여부를 어떤 지표로 판단할까요?
+        target_field: success_metric
+        options: [혜택 대상 상위 10% 중 미갱신자 비율, 전체 갱신률 상승폭]
+        default_option: 혜택 대상 상위 10% 중 미갱신자 비율
+        reason: 성공 지표가 정의서에 없다
+    rationale: 미갱신의 판단 기간과 성공 지표가 없어 추측하지 않고 질문으로 남겼다.

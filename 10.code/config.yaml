@@ -3,6 +3,8 @@ workflow:
   max_rework: 2               # 검증 실패 시 원인 Agent 재작업 최대 횟수
   max_react_steps: 12         # ReAct Agent 1회 실행당 최대 도구 호출 수
   structured_output_retries: 1  # 스키마 검증 실패 시 재요청 횟수 (이후 규칙 기반 기본값)
+  react_enabled: true         # false면 고정 선행 조회만 하고 ReAct 추가 조사는 건너뜀
+  sql_fix_attempts: 1         # 설계 SQL 실행 실패 시 LLM 수정 요청 횟수
 
 requirement:
   required_fields:            # 비어 있으면 확인 질문으로 분기
@@ -13,6 +15,11 @@ requirement:
     - target_definition
     - success_metric
   min_completeness: 0.7       # 이 미만이면 설계 중단 후 확인 질문 단계
+  max_questions: 5            # 한 번에 묻는 확인 질문 수
+  max_question_rounds: 2      # 확인 질문 반복 횟수 (초과 시 기본값을 가정하고 진행)
+
+fewshot:
+  exclude_domains: [ecommerce]  # 평가용 샘플 정의서 도메인 (평가 오염 방지)
 
 rag:
   top_k: 8
