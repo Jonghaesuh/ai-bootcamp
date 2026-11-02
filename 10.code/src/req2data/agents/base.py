@@ -121,6 +121,20 @@ class BaseAgent:
             return f"(추가 조사 실패: {exc})"
         return _summarize_react(messages)
 
+    def knowledge(self, query: str, source: str, k: int = 3, title: str = "") -> str:
+        """RAG 검색 결과를 프롬프트용 블록으로. 카탈로그가 없거나 검색이 실패하면 빈 문자열."""
+        if self.deps.catalog is None or not query.strip():
+            return ""
+        try:
+            hits = self.deps.catalog.search_catalog(query, k=k, source=source)
+        except Exception as exc:
+            log.warning("%s: %s 검색 실패: %s", self.name, source, exc)
+            return ""
+        if not hits:
+            return ""
+        body = "\n\n".join(f"(출처: {h['doc_id']})\n{h['text']}" for h in hits)
+        return f"## {title or source} (검색 결과, 근거로 인용할 때는 출처를 밝힐 것)\n{body}"
+
     def result_event(self, result: StructuredResult, **detail: Any) -> dict:
         return {
             "agent": self.name,

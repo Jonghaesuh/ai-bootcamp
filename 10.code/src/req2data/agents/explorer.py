@@ -1,9 +1,12 @@
+import logging
 from typing import Any
 
 from req2data.agents.base import BaseAgent, as_json
 from req2data.graph.state import Req2DataState, load
 from req2data.schemas import ColumnRef, DataMapping, JoinStep, RequirementSpec
 from req2data.tools.catalog import build_catalog_tools, schema_index
+
+log = logging.getLogger(__name__)
 
 MAX_TABLES = 8
 MAX_KEY_PROFILES = 12
@@ -75,7 +78,11 @@ class DataExplorer(BaseAgent):
             for col in desc.get("columns", []):
                 is_key = col.get("is_pk") or col.get("fk") or col["name"].endswith("_id")
                 if is_key and len(profiles) < MAX_KEY_PROFILES:
-                    p = self.catalog.profile_column(t, col["name"])
+                    try:
+                        p = self.catalog.profile_column(t, col["name"])
+                    except Exception as exc:  # 프로파일 하나 실패로 매핑 전체를 멈추지 않는다
+                        log.info("프로파일 실패 %s.%s: %s", t, col["name"], exc)
+                        continue
                     profiles[f"{t}.{col['name']}"] = {
                         "row_count": p.get("row_count"),
                         "distinct": p.get("distinct"),
@@ -99,7 +106,14 @@ class DataExplorer(BaseAgent):
             },
             "key_profiles": profiles,
             "join_paths": self.catalog.find_join_path(tables) if len(tables) > 1 else [],
+            "glossary": self.glossary_hits(spec),
         }
+
+    def glossary_hits(self, spec: RequirementSpec) -> list[dict]:
+        """요구사항 용어의 정의·계산법·관련 컬럼 (예: 재구매 → customer_unique_id 기준)."""
+        query = " ".join(requirement_queries(spec))
+        hits = self.catalog.search_catalog(query, k=4, source="glossary") if query else []
+        return [{"doc_id": h["doc_id"], "text": h["text"]} for h in hits]
 
     def drop_hallucinations(self, mapping: DataMapping, known_tables: list[str]) -> DataMapping:
         tables = set(known_tables) | {c.table for c in _all_refs(mapping)}

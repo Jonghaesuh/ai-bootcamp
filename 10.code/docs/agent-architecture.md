@@ -109,6 +109,7 @@ Agent는 `CatalogClient` 프로토콜에만 의존합니다. 지금은 테스트
 
 ## 5. 아직 구현하지 않은 부분
 
-- `mcp-catalog` 서버와 MCP 기반 `CatalogClient`, RAG 인덱스(벡터 Few-shot 포함)
+- `mcp-catalog` 서버와 MCP 기반 `CatalogClient` (지금은 `tools/local_catalog.py`가 같은 프로토콜로 DuckDB·RAG에 직접 연결. RAG 구성은 [rag.md](rag.md))
+- Few-shot 예시의 벡터 검색 전환, 승인 흐름과 연결된 장기 기억(사례 추가 API `KnowledgeBase.add_case`만 있음)
 - 데이터셋 parquet 내보내기(MCP 서버 도구로 추가 예정)
-- 데모 모드(기록 응답 재생), FastAPI·Streamlit, 장기 기억
+- 데모 모드(기록 응답 재생), FastAPI·Streamlit

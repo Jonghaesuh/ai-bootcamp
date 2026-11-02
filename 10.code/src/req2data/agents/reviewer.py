@@ -74,8 +74,13 @@ class Reviewer(BaseAgent):
         checks.append(self.check_coverage(spec, mapping, design))
 
         report = self.compile(design, checks, eda, confirmations)
+        issues = " ".join(
+            f"{c.name} {c.evidence}" for c in checks if c.status != CheckStatus.passed
+        )
         narrative = self.structured(
-            self.system(state),
+            self.system(
+                state, extra=self.knowledge(issues, "guide", k=3, title="데이터셋 설계 가이드")
+            ),
             self.prompt.task(
                 "narrative",
                 design=as_json(

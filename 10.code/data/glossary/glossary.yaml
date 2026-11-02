@@ -1,0 +1,78 @@
+# 비즈니스 용어집·지표 정의서. synonyms는 검색 쿼리 확장에, related_columns는 매핑 근거에 쓴다.
+- term: 재구매
+  synonyms: [두 번째 주문, 반복 구매, 다시 구매, repeat purchase, repurchase, second order]
+  definition: 같은 실제 고객(customer_unique_id)이 이전 주문 이후 다시 주문하는 것.
+  calculation: customer_unique_id별 주문을 구매 시각 순으로 정렬해 2번째 이후 주문이 있으면 재구매. customer_id로 세면 항상 1건이라 재구매를 찾을 수 없다.
+  related_columns: [customers.customer_unique_id, orders.customer_id, orders.order_purchase_timestamp]
+
+- term: 첫 구매 고객
+  synonyms: [신규 고객, 최초 구매, first purchase, new customer]
+  definition: customer_unique_id 기준으로 첫 주문을 한 고객.
+  calculation: customer_unique_id별 order_purchase_timestamp 최솟값의 주문.
+  related_columns: [customers.customer_unique_id, orders.order_purchase_timestamp]
+
+- term: 취소 주문
+  synonyms: [주문 취소, canceled, cancelled, 미배송]
+  definition: order_status가 canceled 또는 unavailable인 주문.
+  calculation: order_status IN ('canceled', 'unavailable'). order_status는 데이터 추출 시점의 최종 상태다.
+  related_columns: [orders.order_status]
+
+- term: 배송 지연
+  synonyms: [늦은 배송, 지연 배송, 배송이 늦, 늦게 도착, late delivery, delivery delay]
+  definition: 실제 배송 완료일이 고객에게 안내한 예상 배송일보다 늦은 경우.
+  calculation: order_delivered_customer_date > order_estimated_delivery_date. 배송 완료일은 배송 후에야 알 수 있다.
+  related_columns: [orders.order_delivered_customer_date, orders.order_estimated_delivery_date]
+
+- term: 배송 소요일
+  synonyms: [배송 기간, 리드타임, delivery time, lead time]
+  definition: 구매부터 고객 배송 완료까지 걸린 일수.
+  calculation: date_diff('day', order_purchase_timestamp, order_delivered_customer_date)
+  related_columns: [orders.order_purchase_timestamp, orders.order_delivered_customer_date]
+
+- term: 불만 리뷰
+  synonyms: [부정 리뷰, 낮은 평점, 저평점, negative review, low score, complaint]
+  definition: 리뷰 점수가 낮은 리뷰. 보통 1~2점.
+  calculation: review_score <= 2
+  related_columns: [order_reviews.review_score]
+
+- term: 주문 금액
+  synonyms: [결제 금액, 매출, 구매 금액, order value, payment value, GMV]
+  definition: 주문 하나에 대해 결제된 총액.
+  calculation: order_payments.payment_value를 order_id로 합계 (결제 수단이 여러 개일 수 있음). 상품가+배송비는 order_items의 price + freight_value 합계.
+  related_columns: [order_payments.payment_value, order_items.price, order_items.freight_value]
+
+- term: 객단가
+  synonyms: [평균 주문 금액, AOV, average order value]
+  definition: 고객이 주문 1건당 결제하는 평균 금액.
+  calculation: 주문 금액 합계 / 주문 수
+  related_columns: [order_payments.payment_value]
+
+- term: 할부
+  synonyms: [할부 개월, 분할 결제, installments]
+  definition: 결제를 나눠 내는 개월 수.
+  calculation: order_payments.payment_installments
+  related_columns: [order_payments.payment_installments]
+
+- term: 결제 수단
+  synonyms: [결제 방법, 지불 수단, payment type, payment method, 신용카드, boleto]
+  definition: 신용카드, 볼레투(boleto, 은행 송금 전표), 바우처, 체크카드.
+  calculation: order_payments.payment_type
+  related_columns: [order_payments.payment_type]
+
+- term: 상품 카테고리
+  synonyms: [카테고리, 품목, category, product category]
+  definition: 상품 분류. 원본은 포르투갈어이고 번역표로 영어명을 얻는다.
+  calculation: products.product_category_name → product_category_name_translation
+  related_columns: [products.product_category_name, product_category_name_translation.product_category_name_english]
+
+- term: 고객 지역
+  synonyms: [지역, 거주지, 주(州), state, region, 도시, city]
+  definition: 고객의 주(州)·도시.
+  calculation: customers.customer_state, customers.customer_city
+  related_columns: [customers.customer_state, customers.customer_city]
+
+- term: 판매자
+  synonyms: [셀러, 입점사, seller, merchant]
+  definition: Olist 마켓플레이스에 입점해 상품을 파는 사업자.
+  calculation: order_items.seller_id → sellers
+  related_columns: [order_items.seller_id, sellers.seller_id]

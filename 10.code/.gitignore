@@ -25,3 +25,6 @@ storage/**/*
 .DS_Store
 .vscode/
 .idea/
+
+# 프로파일 (데이터에서 재생성)
+data/catalog/profiles.json

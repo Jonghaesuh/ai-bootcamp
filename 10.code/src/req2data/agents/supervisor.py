@@ -155,7 +155,9 @@ class Supervisor(BaseAgent):
             "change_request": None,
             "rework_counts": {},
             "feedback": feedback,
-            "route": RouteDecision(next=scope.restart_from, reason=scope.reason).model_dump(mode="json"),
+            "route": RouteDecision(next=scope.restart_from, reason=scope.reason).model_dump(
+                mode="json"
+            ),
             "trace": [
                 trace_event(
                     self.name,
@@ -215,7 +217,9 @@ def ask_user(state: Req2DataState) -> dict:
     빠진 답변은 질문의 default_option으로 채운다.
     """
     questions = state.get("pending_questions") or []
-    reply = (interrupt({"type": "clarification", "questions": questions}) or {}).get("answers") or {}
+    reply = (interrupt({"type": "clarification", "questions": questions}) or {}).get(
+        "answers"
+    ) or {}
 
     new: list[dict] = []
     redo: set[AgentName] = set()

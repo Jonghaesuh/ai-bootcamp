@@ -30,8 +30,18 @@ class RequirementAnalyst(BaseAgent):
         answered = state.get("answered") or []
         required = self.deps.cfg("requirement.required_fields", list(FIELD_QUESTIONS))
 
+        extra = "\n\n".join(
+            filter(
+                None,
+                [
+                    self.deps.fewshots.render("requirement_spec", document),
+                    self.knowledge(document, "glossary", k=4, title="비즈니스 용어집"),
+                    self.knowledge(document, "case", k=2, title="과거 승인 설계 사례"),
+                ],
+            )
+        )
         result = self.structured(
-            self.system(state, extra=self.deps.fewshots.render("requirement_spec", document)),
+            self.system(state, extra=extra),
             self.prompt.task("analyze", document=document, answers=render_answered(answered)),
             RequirementSpec,
             fallback=lambda: fallback_spec(document),

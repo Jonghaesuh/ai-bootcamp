@@ -43,7 +43,22 @@ class DatasetDesigner(BaseAgent):
         requirements = as_json(spec.model_copy(update={"open_questions": []}))
         mapping_text = as_json(mapping)
         query = " ".join(filter(None, [spec.prediction_target, spec.target_definition]))
-        system = self.system(state, extra=self.deps.fewshots.render("dataset_design", query))
+        extra = "\n\n".join(
+            filter(
+                None,
+                [
+                    self.deps.fewshots.render("dataset_design", query),
+                    self.knowledge(
+                        f"{query} 분석 단위 기준 시점 누수 관측 기간 분할",
+                        "guide",
+                        k=4,
+                        title="데이터셋 설계 가이드",
+                    ),
+                    self.knowledge(query, "case", k=2, title="과거 승인 설계 사례"),
+                ],
+            )
+        )
+        system = self.system(state, extra=extra)
 
         notes = self.react(
             system,

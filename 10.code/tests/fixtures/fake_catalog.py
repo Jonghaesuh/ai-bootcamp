@@ -220,6 +220,8 @@ class FakeCatalog:
         self, query: str, k: int = 8, source: str = "catalog"
     ) -> list[dict[str, Any]]:
         self.calls.append(("search_catalog", query))
+        if source != "catalog":  # 용어집·가이드·사례는 RAG 테스트(test_rag.py)에서 다룬다
+            return []
         q = _bigrams(query)
         hits = []
         for table, meta in CATALOG.items():

@@ -12,6 +12,11 @@ make models    # Ollama 모델: qwen2.5:7b-instruct, bge-m3
 
 Olist 데이터: https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce 의 CSV 9개를 `data/raw/olist/`에 둡니다.
 
+```bash
+make data      # CSV → DuckDB 적재 → 컬럼 프로파일 → RAG 인덱스 (상세: docs/rag.md)
+make index     # 인덱스만 다시 구축 (CSV 없이도 카탈로그 정의·용어집·가이드로 동작)
+```
+
 ## Agent 구조
 
 설계 문서: [docs/agent-architecture.md](docs/agent-architecture.md)
@@ -21,15 +26,16 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 from req2data.agents import AgentDeps
 from req2data.graph import build_graph, new_project_state
+from req2data.tools.local_catalog import LocalCatalogClient
 
-graph = build_graph(AgentDeps.from_settings(catalog=my_catalog_client), checkpointer=InMemorySaver())
+graph = build_graph(AgentDeps.from_settings(catalog=LocalCatalogClient.from_settings()), checkpointer=InMemorySaver())
 config = {"configurable": {"thread_id": "p1"}}
 graph.invoke(new_project_state("p1", 정의서_텍스트, "practitioner"), config)   # 확인 질문에서 멈춤
 graph.invoke(Command(resume={"answers": {"R1Q1": "90일"}}), config)          # 답변으로 재개
 graph.invoke({"change_request": "타깃 기간을 60일로 바꿔줘"}, config)          # 대화형 수정
 ```
 
-`my_catalog_client`는 `req2data.tools.CatalogClient` 프로토콜 구현체입니다(MCP 카탈로그 서버 연결 예정, 테스트는 `tests/fixtures/fake_catalog.py`).
+`LocalCatalogClient`는 DuckDB(읽기 전용)와 RAG 지식 베이스를 묶은 `CatalogClient` 구현체입니다. MCP 카탈로그 서버는 이를 감싸 노출할 예정이고, 테스트는 `tests/fixtures/`의 가짜 구현을 씁니다.
 
 ## 디렉토리
 
