@@ -24,11 +24,11 @@
 
 **핵심 기능**
 
-1. **요구사항 구조화와 확인 질문** — 정의서에서 비즈니스 목표, 예측 대상, 분석 단위, 예측 시점, 타깃 정의, 성공 지표, 제약을 추출하고, 빠진 항목은 사용자에게 질문합니다.
+1. **요구사항 구조화와 확인 질문** — 정의서에서 비즈니스 목표, 예측 대상, 분석 단위, 예측 시점, 타깃 정의, 성공 지표(이상 필수 항목)와 제약(선택 항목)을 추출하고, 빠진 필수 항목은 사용자에게 질문합니다.
 2. **데이터 매핑 (RAG)** — 데이터 카탈로그와 과거 설계 사례를 검색해 요구사항별 후보 테이블·컬럼·조인 경로를 근거와 함께 제시합니다.
-3. **데이터셋 설계** — 분석 단위, 기준 시점, 관측·예측 윈도우, 타깃 정의, 피처 후보를 설계하고 데이터 마트 SQL을 생성합니다.
-4. **자동 검증** — SQL을 실제로 실행해 행 수와 타깃 비율을 확인하고, 데이터 누수, 요구사항 반영률, 결측·품질을 점검해 기준 미달이면 스스로 재작업합니다.
-5. **산출물 생성** — 데이터셋 명세서, 요구사항–데이터 추적표, 마트 SQL, 검증 리포트를 내려받을 수 있게 제공합니다.
+3. **데이터셋 설계** — 분석 단위, 기준 시점, 관측·예측 윈도우, 타깃 정의, 피처 후보, 기준 시점 기반 train/val/test 분할(out-of-time)을 설계하고 데이터 마트 SQL을 생성합니다.
+4. **자동 검증·탐색적 분석** — SQL을 실제로 실행해 행 수와 타깃 비율을 확인하고, 데이터 누수, 관측 기간 절단(right-censoring), 요구사항 반영률, 결측·품질을 점검해 기준 미달이면 스스로 재작업합니다. 타깃 분포, 피처별 타깃 비율, 피처 간 상관 등 EDA 요약과 함께 모델링 실익(타깃 비율·표본 수 기준)도 판정합니다.
+5. **산출물 생성** — 데이터셋 명세서, 요구사항–데이터 추적표, 마트 SQL, 검증·EDA 리포트, 분할 컬럼이 포함된 데이터셋 파일(parquet)을 내려받을 수 있게 제공합니다.
 
 **사용자 가치와 기대효과**
 
@@ -70,10 +70,10 @@
 
 | 영역 | 적용 기술 |
 | --- | --- |
-| LLM | Ollama 로컬 LLM(Qwen2.5 7B Instruct) 기본. 환경변수로 OpenAI 호환 엔드포인트·Anthropic으로 전환 |
-| Agent | LangGraph (Supervisor + 4개 역할 Agent), LangChain Tool Calling, ReAct |
+| LLM | Ollama 로컬 LLM(Qwen2.5 7B Instruct) 기본. 환경변수로 OpenAI 호환 엔드포인트·Anthropic 또는 더 큰 로컬 모델(14B급)로 전환 |
+| Agent | LangGraph (Supervisor + 4개 역할 Agent + 리포트 노드), LangChain Tool Calling, ReAct |
 | RAG | Ollama 임베딩(bge-m3) + Chroma, BM25 하이브리드 검색 |
-| 데이터 | Olist 브라질 이커머스 공개 데이터(테이블 9개) → SQLite/DuckDB |
+| 데이터 | Olist 브라질 이커머스 공개 데이터(테이블 9개) → DuckDB (LangGraph 체크포인터·Store는 SQLite) |
 | 도구 연동 | MCP 서버(데이터 카탈로그·읽기 전용 SQL), A2A(모델링 Agent 연계) |
 | 서비스 | Streamlit UI, FastAPI(SSE 스트리밍), Docker Compose |
 
@@ -93,11 +93,24 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 
 **CoT·Few-shot 전략**
 
-- **단계형 추론(Plan-and-Solve)** — 데이터셋 설계는 ① 분석 단위 → ② 기준 시점 → ③ 타깃 정의 → ④ 피처 후보 → ⑤ 누수 점검 순서로 생각하도록 고정합니다. 추론 과정은 출력의 `rationale` 필드에 요약해 검증 Agent와 사용자가 확인할 수 있게 합니다.
+- **단계형 추론(Plan-and-Solve)** — 데이터셋 설계는 ① 분석 단위 → ② 기준 시점 → ③ 타깃 정의(관측 가능 기간 포함) → ④ 피처 후보 → ⑤ 누수 점검 → ⑥ 분할 설계 순서로 생각하도록 고정합니다. 추론 과정은 출력의 `rationale` 필드에 요약해 검증 Agent와 사용자가 확인할 수 있게 합니다.
 - **동적 Few-shot** — "정의서 → 구조화 명세", "요구사항 → 데이터셋 설계" 예시를 도메인별로 여러 개 만들어 두고, 입력 정의서와 가장 비슷한 예시 2개를 검색해 프롬프트에 넣습니다.
 - **자기 검토(Reflection)** — 검증 Agent의 피드백을 다음 시도의 프롬프트에 넣어 같은 실수를 반복하지 않게 합니다.
 
-**출력 구조화 템플릿** — 모든 Agent 출력은 Pydantic 스키마(`RequirementSpec`, `DataMapping`, `DatasetDesign`, `ReviewReport`, `RouteDecision`)로 받습니다. 스키마 검증에 실패하면 오류 내용을 넣어 한 번 더 요청하고, 그래도 실패하면 규칙 기반 기본값으로 대체합니다. 프롬프트는 코드와 분리해 YAML 파일로 버전 관리하고, temperature 0으로 일관성을 높입니다.
+**출력 구조화 템플릿** — 모든 Agent 출력은 Pydantic 스키마로 받습니다.
+
+| 스키마 | 생성 주체 | 주요 필드 |
+| --- | --- | --- |
+| `RequirementSpec` | 요구사항 분석 | 목표, 예측 대상, 분석 단위, 예측 시점, 타깃 정의, 성공 지표, 제약, 완성도 |
+| `ClarificationQuestion` | 요구사항 분석·Supervisor | 질문, 대상 필드, 선택지, 질문 이유 |
+| `DataMapping` | 데이터 탐색 | 요구사항 항목, 테이블·컬럼, 조인 경로, 근거 문서 |
+| `DatasetDesign` | 데이터셋 설계 | 분석 단위 키, 기준 시점, 윈도우, 타깃, 피처(컬럼별 사용 가능 시점), 분할 규칙, SQL, `rationale` |
+| `ReviewReport` | 검증 | 체크 항목별 판정·근거, EDA 요약, 모델링 실익 판정, 재작업 대상 |
+| `RouteDecision` | Supervisor | 다음 Agent, 이유, 재작업 지시 |
+| `ChangeScope` | Supervisor | 수정 요청이 바꾸는 State 필드, 재실행 시작 Agent |
+| `TraceabilityRow` | 리포트 노드 | 요구사항 ID ↔ 컬럼 ↔ SQL 위치 ↔ 검증 결과 |
+
+ 스키마 검증에 실패하면 오류 내용을 넣어 한 번 더 요청하고, 그래도 실패하면 규칙 기반 기본값으로 대체합니다. 프롬프트는 코드와 분리해 YAML 파일로 버전 관리하고, temperature 0으로 일관성을 높입니다.
 
 **사용자 유형·상황별 분기**
 
@@ -107,6 +120,8 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 | 사용자 = 기획자 | 비즈니스 언어로 요약하고, 고객에게 확인할 질문을 우선 제시 |
 | 정의서 완성도 낮음 | 설계를 멈추고 확인 질문 단계로 분기 |
 | 필요한 데이터 없음 | 대체 데이터(프록시 변수) 제안 또는 추가 수집 필요 항목으로 정리 |
+| 기준 시점·타깃 정의 변경이 필요 | 비즈니스 의사결정(예: 쿠폰 발송 시점)이 바뀌므로 자동 재작업하지 않고 대안을 제시해 사용자 확인 |
+| 모델링 실익 낮음 (타깃 비율·표본 수 미달) | 불균형 경고와 함께 평가 지표(PR-AUC, 상위 N% Lift), 타깃 기간 확대 등 대안 제시 |
 | 수정 요청(대화) | 변경 범위를 판단해 영향받는 Agent부터 재실행 |
 
 ### 2.2 LangChain / LangGraph 기반 Agent 구조
@@ -118,11 +133,17 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 | Supervisor | 라우팅, 재작업 지시, 사용자 확인 요청 | Structured Output 라우터 + 규칙 가드 | — |
 | ① 요구사항 분석 | 정의서 구조화, 모호점 질문 생성 | Structured Output + 동적 Few-shot | 예시 검색 |
 | ② 데이터 탐색 | 요구사항별 테이블·컬럼·조인 경로 매핑 | ReAct Agent | 카탈로그 검색(RAG), 스키마 조회, 컬럼 프로파일, 조인 경로 탐색 |
-| ③ 데이터셋 설계 | 타깃·피처·윈도우 설계, 마트 SQL 생성·실행 | ReAct Agent | 읽기 전용 SQL 실행, 타깃 비율 계산 |
-| ④ 검증 | 누수·반영률·품질 점검, 재작업 대상 지정 | 규칙 기반 검사 + LLM 판단 | 시점 컬럼 검사, 품질 프로파일 |
-| 리포트 작성 | 명세서·추적표·SQL·리포트 생성 | 템플릿 + LLM 요약 (사용자 유형별) | 파일 저장 |
+| ③ 데이터셋 설계 | 타깃·피처·윈도우·분할 설계, 마트 SQL 생성·실행 | ReAct Agent | 읽기 전용 SQL 실행, 타깃 비율 계산, 데이터셋 내보내기(parquet) |
+| ④ 검증 | 누수·절단·반영률·품질 점검, EDA 요약, 재작업 대상 지정 | 규칙 기반 검사 + LLM 판단 | 시점 컬럼 검사, SQL 컬럼 계보 추출, 품질 프로파일 |
+| 리포트 노드 (Agent 아님) | 명세서·추적표·SQL·리포트 생성 | 템플릿 + LLM 요약 (사용자 유형별) | 파일 저장 |
 
 **Tool Calling·ReAct** — 데이터 탐색과 데이터셋 설계 Agent는 "생각 → 도구 호출 → 관찰"을 반복합니다. 예를 들어 카탈로그에서 `customer_id`를 찾은 뒤 실제 프로파일을 조회해 고유값이 주문 수와 같다는 것을 확인하고, 실제 고객 키인 `customer_unique_id`로 설계를 바꿉니다.
+
+7B 로컬 모델은 긴 도구 호출 체인에서 형식 오류나 반복 호출이 잦기 때문에, 항상 필요한 앞부분 호출(카탈로그 검색 → 스키마 조회 → 프로파일 조회)은 코드로 고정해 결과를 State에 넣고, LLM은 그 결과를 보고 추가 조사·판단만 하도록 합니다. ReAct 호출 수는 `max_react_steps`로 제한합니다.
+
+**누수·절단 검사 방식** — 카탈로그의 시점 컬럼 메타데이터(예: `order_purchase_timestamp`, `order_delivered_customer_date`, `review_creation_date`)를 기준으로, sqlglot으로 마트 SQL에서 각 피처가 참조하는 원천 컬럼을 추출해 "사용 가능 시점"을 계산합니다. 사용 가능 시점이 기준 시점보다 늦으면 누수로 판정합니다. 또한 데이터 마지막 날짜에서 기준 시점까지가 타깃 기간보다 짧은 행(타깃을 끝까지 관측할 수 없는 행)이 포함되면 절단 오류로 판정합니다.
+
+**부분 재실행** — State 필드와 Agent의 의존 관계를 표로 정의합니다(예: `requirement_spec` → 탐색·설계·검증, `dataset_design.target_window` → 설계·검증). 수정 요청이 오면 Supervisor가 `ChangeScope`로 바뀌는 필드를 판정하고, `update_state`로 해당 필드를 고친 뒤 가장 앞선 영향 Agent부터 체크포인트에서 재개합니다. 영향받지 않는 결과(예: 데이터 매핑)는 그대로 재사용합니다.
 
 **Memory**
 
@@ -137,7 +158,7 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 | --- | --- | --- |
 | 데이터 카탈로그 | 테이블·컬럼 정의서(공개 데이터 사전 + 한글 설명), PK·FK, 자동 프로파일(결측률, 고유값 수, 값 범위, 예시 값) | ② 데이터 탐색 |
 | 비즈니스 용어집·지표 정의서 | "재구매", "배송 지연" 등 용어와 계산 방법 | ① ② |
-| 데이터셋 설계 가이드 | 누수 방지, 윈도우 설계, 분석 단위 선택 체크리스트 | ③ ④ |
+| 데이터셋 설계 가이드 | 누수 방지, 관측 기간 절단, 윈도우·분할 설계, 분석 단위 선택, 불균형 대응 체크리스트 | ③ ④ |
 | 과거 설계 사례 | 승인된 설계(장기 기억에서 계속 추가) | ① ③ |
 
 **전처리 파이프라인** — 원천 CSV를 DB에 적재한 뒤, 테이블별 프로파일을 자동으로 만들어 정의서 내용과 합칩니다. 카탈로그는 테이블 단위 문서 1개와 컬럼 단위 문서(컬럼별 1개)로 나눠 메타데이터(테이블, 컬럼, 타입, PK/FK, 시점 컬럼 여부)를 붙이고, 가이드·사례 문서는 Markdown 제목 단위로 청크합니다.
@@ -162,21 +183,43 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 | --- | --- |
 | `POST /projects` | 프로젝트 생성(정의서, 사용자 유형) |
 | `POST /projects/{id}/run` | 그래프 실행, Agent 진행 상황을 SSE로 스트리밍 |
-| `POST /projects/{id}/resume` | 확인 질문 답변·수정 요청으로 재개 |
+| `POST /projects/{id}/resume` | 확인 질문 답변·수정 요청으로 재개, 이후 진행 상황을 SSE로 스트리밍 |
 | `GET /projects/{id}/artifacts` | 산출물 조회·다운로드 |
 | `GET /catalog/search` | 카탈로그 검색 |
 | `POST /admin/reindex` | 데이터 적재·인덱스 재구축 |
 
-- **배포** — Docker Compose로 `api`, `ui`, `mcp-catalog`, `ollama` 컨테이너를 한 번에 실행합니다. Docker 없이도 `make setup && make run`으로 로컬 실행이 가능하게 합니다.
+- **배포** — Docker Compose로 `api`, `ui`, `mcp-catalog`, `ollama` 컨테이너를 한 번에 실행합니다. 단, macOS에서는 컨테이너 안의 Ollama가 Metal GPU를 쓰지 못해 매우 느리므로 Ollama는 호스트에서 실행하고 컨테이너는 `host.docker.internal`로 연결하는 구성을 기본으로 합니다(`ollama` 서비스는 Linux·GPU 환경용 profile로 분리). Docker 없이도 `make setup && make run`으로 로컬 실행이 가능하게 합니다.
 - **설정·환경 관리** — `.env` + pydantic-settings로 LLM 제공자·모델·경로를 관리하고, 재작업 횟수·품질 기준 등 정책값은 `config.yaml`, 프롬프트는 `prompts/*.yaml`로 분리합니다. LLM이 없는 환경을 위해 기록된 응답으로 재현하는 데모 모드와 자동 테스트(pytest)를 포함합니다.
 
 ### 2.5 선택적 확장 기능
 
 **A. Structured Output / Function Calling** — 모든 Agent 간 계약을 Pydantic 스키마로 정의하고, Supervisor의 라우팅도 `RouteDecision`(다음 Agent, 이유, 재작업 지시) 구조로 받습니다. LLM이 허용되지 않은 Agent를 고르면 규칙 가드가 막습니다.
 
-**B. MCP 기반 도구 연동** — 데이터 카탈로그와 DB 접근을 별도 MCP 서버(`mcp-catalog`, FastMCP)로 분리합니다. 제공 도구는 `list_tables`, `describe_table`, `search_catalog`, `profile_column`, `find_join_path`, `run_readonly_sql`이며, Agent는 `langchain-mcp-adapters`로 연결합니다. 실제 사내 환경에서는 이 서버만 사내 DB·카탈로그에 맞게 교체하면 Agent 코드는 그대로 쓸 수 있습니다. SQL은 읽기 전용 연결과 SELECT 문 검사, 행 수·시간 제한을 겁니다.
+**B. MCP 기반 도구 연동** — 데이터 카탈로그와 DB 접근을 별도 MCP 서버(`mcp-catalog`, FastMCP)로 분리합니다. 제공 도구는 `list_tables`, `describe_table`, `search_catalog`, `profile_column`, `find_join_path`, `run_readonly_sql`이며, Agent는 `langchain-mcp-adapters`로 연결합니다. 실제 사내 환경에서는 이 서버만 사내 DB·카탈로그에 맞게 교체하면 Agent 코드는 그대로 쓸 수 있습니다. SQL 실행은 다음과 같이 제한합니다.
 
-**C. A2A 기반 Agent 협업 (2단계 구현)** — 설계가 끝난 데이터셋을 이전 실습에서 만든 모델링 Agent(A2A 서버로 래핑)에 보내 베이스라인 모델을 학습시키고, 성능과 피처 중요도를 돌려받습니다. 서로 다른 프로세스의 Agent가 Agent Card로 능력을 확인하고 표준 메시지로 협업하는 구조입니다.
+- DuckDB를 `read_only=True`로 열고 `enable_external_access=false`로 설정해 SELECT 문 안에서도 `read_csv('/etc/...')` 같은 파일 시스템 접근을 막습니다.
+- sqlglot으로 SQL을 파싱해 단일 SELECT(CTE 포함)만 허용하고, `ATTACH`·`COPY`·`INSTALL`·`LOAD`·`PRAGMA`와 파일 읽기 함수는 거부합니다. 참조 테이블은 카탈로그에 등록된 테이블로 한정합니다.
+- 행 수(`max_rows`)·실행 시간(`timeout_seconds`) 제한을 겁니다.
+
+**C. A2A 기반 Agent 협업 (2단계 구현)** — 설계가 끝난 데이터셋(분할 컬럼이 포함된 parquet + `DatasetDesign`)을 이전 실습에서 만든 모델링 Agent(A2A 서버로 래핑)에 보내 베이스라인 모델을 학습시키고, 성능과 피처 중요도를 돌려받습니다. 서로 다른 프로세스의 Agent가 Agent Card로 능력을 확인하고 표준 메시지로 협업하는 구조입니다.
+
+### 2.6 개발 범위와 우선순위
+
+| 우선순위 | 범위 | 완료 기준 |
+| --- | --- | --- |
+| P0 (필수) | LangGraph Supervisor + 4개 Agent + 리포트 노드, Pydantic 스키마, mcp-catalog(읽기 전용 SQL 포함), 누수·절단 검사, Streamlit 기본 화면, 재구매 시나리오 | 재구매 시나리오가 확인 질문 → 매핑 → 설계 → 검증·재작업 → 산출물까지 끝까지 실행됨 |
+| P1 (권장) | 하이브리드 RAG(BM25 + FK 그래프), 동적 Few-shot, 대화형 수정(부분 재실행), 사용자 유형별 분기, 샘플 정의서 2종 추가, 품질 평가 | 샘플 3종 평가 결과표 작성, "타깃 기간 60일" 수정 시 매핑 재사용 확인 |
+| P2 (선택) | A2A 모델링 Agent 연계, 장기 기억(승인 설계 사례화·사용자 선호), Docker Compose 패키징 | 베이스라인 성능·피처 중요도가 UI에 표시됨 |
+
+### 2.7 주요 리스크와 대응
+
+| 리스크 | 대응 |
+| --- | --- |
+| 7B 로컬 모델의 도구 호출·구조화 출력 불안정 | 앞부분 도구 호출을 코드로 고정, 스키마 재요청 1회 후 규칙 기반 기본값, 상위 모델 전환 옵션, 데모 모드 |
+| SQL 실행을 통한 파일 시스템 접근 | DuckDB `enable_external_access=false`, sqlglot 기반 허용 목록 검사 |
+| 극단적 클래스 불균형으로 베이스라인 성능 저조 | 모델링 실익 판정과 대안(지표·타깃 기간) 제시를 기능으로 포함 |
+| macOS에서 Docker Ollama 성능 저하 | 호스트 Ollama를 기본 구성으로 사용 |
+| 장기 기억으로 평가 데이터 오염 | 평가용 샘플 정의서·정답 설계는 사례 저장소와 Few-shot 후보에서 제외 |
 
 ## 3. 주요 기능 및 동작 시나리오
 
@@ -190,25 +233,105 @@ API 키 발급이 어려운 환경을 고려해 모든 구성요소를 무료·�
 | 2. 요구사항 구조화 | 진행 화면에서 추출 결과 확인 | 목표, 예측 대상(첫 구매 고객), 성공 지표를 구조화하고, 빠진 항목 2개를 질문으로 정리: "재구매 판단 기간은?", "취소 주문도 포함하나요?" |
 | 3. 확인 질문 응답 | "첫 구매 후 90일, 취소 제외"라고 답변 | `interrupt()`로 멈췄던 그래프가 답변을 반영해 재개 |
 | 4. 데이터 매핑 | 매핑 탭에서 후보 테이블·컬럼과 근거 확인 | 카탈로그를 검색해 주문·고객·결제·리뷰·상품 테이블을 매핑. 프로파일 조회로 `customer_id`가 주문마다 새로 발급되는 키라는 것을 발견하고, 고객 단위 키를 `customer_unique_id`로 지정 |
-| 5. 데이터셋 설계 | 설계·SQL 탭 확인 | 분석 단위(고객), 기준 시점(첫 구매 시각), 타깃(90일 내 두 번째 주문), 피처(첫 주문 금액, 결제 수단, 할부, 카테고리, 지역 등)를 설계하고 SQL을 실행해 행 수와 타깃 비율 확인 |
-| 6. 자동 검증·재작업 | 검증 리포트 확인 | 리뷰 점수·실제 배송일은 기준 시점 이후에 생기는 정보라 누수로 판정 → Supervisor가 설계 Agent에 재작업 지시 → 기준 시점을 "첫 주문 배송 완료 시각"으로 옮기고 타깃 기간을 그에 맞춰 재설계. 타깃 비율이 매우 낮아 클래스 불균형 경고도 함께 표시 |
-| 7. 대화로 수정 | "타깃 기간을 60일로 바꿔줘" 입력 | 변경 범위를 판단해 설계·검증 Agent만 재실행 (매핑은 그대로 재사용) |
-| 8. 산출물 다운로드 | 명세서·추적표·SQL·검증 리포트 다운로드, 설계 승인 | 승인된 설계를 과거 사례로 저장(장기 기억) |
+| 5. 데이터셋 설계 | 설계·SQL 탭 확인 | 분석 단위(고객), 기준 시점(첫 구매 시각), 타깃(90일 내 두 번째 주문), 피처(첫 주문 금액, 결제 수단, 할부, 카테고리, 지역, 리뷰 점수, 실제 배송 소요일 등)를 설계하고, 기준 시점 기준으로 train/val/test를 나눈 뒤 SQL을 실행해 행 수와 타깃 비율 확인 |
+| 6. 자동 검증·재작업 | 검증 리포트 확인 | ① 리뷰 점수·실제 배송 소요일은 기준 시점 이후에 생기는 정보라 누수로 판정, ② 데이터 마지막 날짜 전 90일 안에 첫 구매한 고객은 타깃을 끝까지 관측할 수 없어 절단 오류로 판정 → Supervisor가 설계 Agent에 재작업 지시 → 누수 피처 제거, 해당 고객 제외 후 재검증 통과. 기준 시점을 배송 완료 시각으로 옮기면 배송 관련 피처를 쓸 수 있지만 쿠폰 발송 시점이 바뀌는 결정이라, 대안으로만 제시하고 사용자 확인(`interrupt()`)을 받음. 리뷰는 배송 후에 작성되는 경우가 많아 이 대안에서도 누수로 남는다는 점을 함께 안내 |
+| 6-1. 모델링 실익 판정 | EDA 요약 확인 | Olist 고객 대부분은 주문이 한 번뿐이라 90일 재구매 비율이 매우 낮음(`min_target_ratio` 미달) → 클래스 불균형 경고, PR-AUC·상위 N% Lift 지표와 타깃 기간 확대안 제시 |
+| 7. 대화로 수정 | "타깃 기간을 60일로 바꿔줘" 입력 | `ChangeScope`로 변경 필드(타깃 기간)를 판정해 설계·검증 Agent만 재실행 (매핑은 그대로 재사용, 절단 기준도 60일로 다시 계산) |
+| 8. 산출물 다운로드 | 명세서·추적표·SQL·검증 리포트·데이터셋(parquet) 다운로드, 설계 승인 | 승인된 설계를 과거 사례로 저장(장기 기억) |
 | 9. (선택) 베이스라인 확인 | "베이스라인 모델 돌려줘" | A2A로 모델링 Agent에 데이터셋을 보내 성능·피처 중요도를 받아 표시 |
 
 같은 데이터로 두 가지 샘플 정의서(배송 지연 예측, 불만 리뷰 예측)도 제공해, 요구사항이 달라지면 분석 단위(주문)와 기준 시점(결제 승인 시각)도 달라지는 것을 보여 줍니다.
 
 ### 3.2 시스템 구조도 / Multi-Agent 구성도
 
-&#91;embedded content: 시스템 구조도 · UI–API–LangGraph–도구–데이터 5계층\]
+```mermaid
+flowchart TB
+  subgraph UI["UI 계층 (Streamlit)"]
+    U1[새 프로젝트] --- U2[진행·확인 질문] --- U3[결과 탭·대화 수정] --- U4[카탈로그 탐색]
+  end
+  subgraph API["API 계층 (FastAPI)"]
+    A1["/projects · /run · /resume (SSE)"]
+    A2["/artifacts · /catalog/search · /admin/reindex"]
+  end
+  subgraph G["LangGraph 계층"]
+    SUP{{Supervisor<br/>RouteDecision·ChangeScope}}
+    RA[① 요구사항 분석]
+    DE[② 데이터 탐색]
+    DS[③ 데이터셋 설계]
+    RV[④ 검증]
+    RP[리포트 노드]
+    ST[(공유 State<br/>체크포인터·Store: SQLite)]
+    SUP --> RA & DE & DS & RV & RP
+    RA & DE & DS & RV & RP -.-> ST
+  end
+  subgraph T["도구 계층"]
+    RAG[하이브리드 검색<br/>Chroma + BM25 + FK 그래프]
+    MCP[mcp-catalog 서버<br/>list_tables · describe_table · search_catalog<br/>profile_column · find_join_path · run_readonly_sql]
+    A2A[A2A 클라이언트<br/>모델링 Agent]
+  end
+  subgraph D["데이터 계층"]
+    DB[(DuckDB<br/>Olist 9개 테이블)]
+    VS[(Chroma<br/>카탈로그·용어집·가이드·사례)]
+    FS[(산출물 저장소)]
+  end
+  UI <--> API
+  API <--> SUP
+  RA --> RAG
+  DE --> RAG & MCP
+  DS --> MCP
+  RV --> MCP
+  RP --> FS
+  DS -.선택.-> A2A
+  RAG --> VS
+  MCP --> DB
+```
 
 Supervisor만 다른 Agent를 호출하고, 모든 Agent는 Tool Calling으로만 데이터에 접근합니다. DB·카탈로그 접근은 MCP 서버 뒤에 있어, 사내 시스템으로 바꿀 때 MCP 서버만 교체하면 됩니다.
 
 ### 3.3 서비스 플로우
 
-&#91;embedded content: 서비스 플로우 시퀀스 · 재구매 예측 시나리오\]
+```mermaid
+sequenceDiagram
+  actor User as 분석가
+  participant UI as Streamlit
+  participant API as FastAPI
+  participant SUP as Supervisor
+  participant RA as 요구사항 분석
+  participant DE as 데이터 탐색
+  participant DS as 데이터셋 설계
+  participant RV as 검증
+  participant MCP as mcp-catalog
 
-파란 화살표는 그래프가 `interrupt()`로 멈춰 사용자 답변을 기다리는 구간이고, 점선 화살표는 Agent가 Supervisor에 결과를 보고하는 흐름입니다. 각 단계의 진행 상황은 FastAPI가 SSE로 UI에 실시간 전달합니다.
+  User->>UI: 정의서 업로드 (실무자)
+  UI->>API: POST /projects → /run (SSE)
+  API->>SUP: 그래프 실행
+  SUP->>RA: 요구사항 구조화
+  RA-->>SUP: RequirementSpec + 확인 질문 2개
+  rect rgba(80,140,255,0.15)
+    SUP->>UI: interrupt() 확인 질문 카드
+    User->>UI: "첫 구매 후 90일, 취소 제외"
+    UI->>API: POST /resume
+  end
+  SUP->>DE: 데이터 매핑
+  DE->>MCP: search_catalog · profile_column · find_join_path
+  DE-->>SUP: DataMapping (customer_unique_id)
+  SUP->>DS: 데이터셋 설계
+  DS->>MCP: run_readonly_sql
+  DS-->>SUP: DatasetDesign
+  SUP->>RV: 검증
+  RV-->>SUP: 누수·절단 미통과
+  SUP->>DS: 재작업 (누수 피처 제거, 절단 고객 제외)
+  DS-->>SUP: DatasetDesign v2
+  SUP->>RV: 재검증
+  RV-->>SUP: 통과 + 불균형 경고 + 기준 시점 변경 대안
+  rect rgba(80,140,255,0.15)
+    SUP->>UI: interrupt() 대안 확인
+    User->>UI: 현재 기준 시점 유지
+  end
+  SUP->>UI: 리포트 노드 → 결과 탭·다운로드
+```
+
+파란 영역은 그래프가 `interrupt()`로 멈춰 사용자 답변을 기다리는 구간이고, 점선 화살표는 Agent가 Supervisor에 결과를 보고하는 흐름입니다. 각 단계의 진행 상황은 FastAPI가 SSE로 UI에 실시간 전달합니다.
 
 1. **사용자 요청** — UI에서 정의서를 올리면 FastAPI가 프로젝트 스레드로 그래프를 실행합니다.
 2. **Agent 처리** — Supervisor가 State를 보고 다음 Agent를 고릅니다(`RouteDecision`).
@@ -222,8 +345,12 @@ Supervisor만 다른 Agent를 호출하고, 모든 Agent는 Tool Calling으로�
 
 - **개발 환경 실행 결과** — 데이터 적재·인덱싱 로그, `pytest` 결과, API 기동 로그
 - **서비스 실행 결과(text)** — 재구매 예측 시나리오의 Agent 단계별 로그, 생성된 데이터셋 명세서·SQL·검증 리포트 발췌
-- **데모 이미지** — Streamlit 화면(프로젝트 생성, 진행·확인 질문, 결과 탭, 대화 수정) 캐프처
-- **품질 평가** — 샘플 정의서 3종에 대해 정답 매핑 대비 테이블·컬럼 재현율, 누수 탐지 여부, SQL 실행 성공률
+- **데모 이미지** — Streamlit 화면(프로젝트 생성, 진행·확인 질문, 결과 탭, 대화 수정) 캡처
+- **품질 평가** — 샘플 정의서 3종에 대해 아래 지표를 측정합니다. 평가용 정의서와 정답 설계는 장기 기억·Few-shot 후보에서 제외해 오염을 막습니다.
+  - 정답 매핑 대비 테이블·컬럼 재현율, 존재하지 않는 테이블·컬럼(환각) 비율
+  - 의도적으로 넣은 누수 피처·절단 오류의 탐지율
+  - 마트 SQL 실행 성공률, 재작업 횟수(최대 2회 내 수렴 여부)
+  - 확인 질문 적절성(정답 모호 항목 대비 질문 재현율)
 
 ## 5. 추가 아이디어
 
