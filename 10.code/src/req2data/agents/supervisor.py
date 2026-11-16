@@ -1,8 +1,7 @@
 from dataclasses import dataclass, field
 from typing import Any
 
-from langgraph.graph import END
-from langgraph.types import Command, interrupt
+from langgraph.types import interrupt
 
 from req2data.agents.base import BaseAgent, as_json
 from req2data.graph.state import Req2DataState, invalidate_from, load, trace_event
@@ -43,7 +42,7 @@ class Supervisor(BaseAgent):
 
     name = "supervisor"
 
-    def __call__(self, state: Req2DataState) -> Command:
+    def __call__(self, state: Req2DataState) -> dict:
         if state.get("change_request"):
             return self.handle_change(state)
 
@@ -76,7 +75,7 @@ class Supervisor(BaseAgent):
                 self.name, "route", next=decision.next, reason=decision.reason, llm=used_llm
             )
         ]
-        return Command(goto=END if decision.next == "end" else decision.next, update=update)
+        return update  # 다음 노드는 graph/builder.py의 route_next가 route.next를 읽어 정한다
 
     def candidates(self, state: Req2DataState) -> Candidates:
         if state.get("pending_questions"):
@@ -137,7 +136,7 @@ class Supervisor(BaseAgent):
         feedback[target] = notes
         return {**invalidate_from(target), "rework_counts": counts, "feedback": feedback}
 
-    def handle_change(self, state: Req2DataState) -> Command:
+    def handle_change(self, state: Req2DataState) -> dict:
         request = state["change_request"]
         result = self.structured(
             self.system(state),
@@ -168,7 +167,7 @@ class Supervisor(BaseAgent):
                 )
             ],
         }
-        return Command(goto=scope.restart_from, update=update)
+        return update
 
 
 def keyword_scope(request: str) -> ChangeScope:

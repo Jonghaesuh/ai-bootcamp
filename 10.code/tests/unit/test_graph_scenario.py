@@ -6,6 +6,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
 from req2data.graph import build_graph, new_project_state
+from req2data.graph.builder import route_next
 from tests.fixtures import scenario as sc
 
 
@@ -121,3 +122,25 @@ def test_change_request_restarts_designer_only(deps, llm):
     assert len(llm.calls_for("DataMapping")) == mapping_calls  # 매핑 재사용
     assert snap.values["design_version"] == 2
     assert "타깃 기간을 60일로" in " ".join(snap.values["feedback"]["dataset_designer"])
+
+
+def test_graph_declares_nodes_and_conditional_edges(deps):
+    g = build_graph(deps).get_graph()
+    workers = {
+        "requirement_analyst",
+        "data_explorer",
+        "dataset_designer",
+        "reviewer",
+        "report",
+        "ask_user",
+    }
+    assert workers | {"supervisor"} <= set(g.nodes)
+    edges = {(e.source, e.target, e.conditional) for e in g.edges}
+    assert all(
+        ("supervisor", w, True) in edges and (w, "supervisor", False) in edges for w in workers
+    )
+    assert ("supervisor", "__end__", True) in edges and ("__start__", "supervisor", False) in edges
+
+
+def test_route_next_reads_route_from_state():
+    assert route_next({"route": {"next": "reviewer", "reason": ""}}) == "reviewer"

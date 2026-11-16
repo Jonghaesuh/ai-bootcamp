@@ -44,10 +44,10 @@ def test_redo_queue_invalidates_downstream(deps):
 
 def test_single_rework_target_skips_llm_and_applies_feedback(deps, llm):
     cmd = Supervisor(deps)(_state(review_report=_failed_review(["dataset_designer"])))
-    assert cmd.goto == "dataset_designer"
-    assert cmd.update["rework_counts"] == {"dataset_designer": 1}
-    assert cmd.update["feedback"]["dataset_designer"] == ["dataset_designer 고칠 것"]
-    assert cmd.update["dataset_design"] is None and "data_mapping" not in cmd.update  # 매핑은 유지
+    assert cmd["route"]["next"] == "dataset_designer"
+    assert cmd["rework_counts"] == {"dataset_designer": 1}
+    assert cmd["feedback"]["dataset_designer"] == ["dataset_designer 고칠 것"]
+    assert cmd["dataset_design"] is None and "data_mapping" not in cmd  # 매핑은 유지
     assert llm.calls == []
 
 
@@ -56,7 +56,7 @@ def test_guard_rejects_llm_choice_outside_candidates(deps, llm):
     cmd = Supervisor(deps)(
         _state(review_report=_failed_review(["data_explorer", "dataset_designer"]))
     )
-    assert cmd.goto == "data_explorer"  # 후보 밖 선택 → 규칙 기본값
+    assert cmd["route"]["next"] == "data_explorer"  # 후보 밖 선택 → 규칙 기본값
     assert len(llm.calls_for("RouteDecision")) == 1
 
 
@@ -68,8 +68,8 @@ def test_llm_choice_within_candidates_is_used(deps, llm):
     cmd = Supervisor(deps)(
         _state(review_report=_failed_review(["data_explorer", "dataset_designer"]))
     )
-    assert cmd.goto == "dataset_designer"
-    assert cmd.update["feedback"]["dataset_designer"][-1] == "SQL만 수정"
+    assert cmd["route"]["next"] == "dataset_designer"
+    assert cmd["feedback"]["dataset_designer"][-1] == "SQL만 수정"
 
 
 def test_rework_limit_moves_on_to_report(deps):
