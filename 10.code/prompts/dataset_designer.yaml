@@ -6,6 +6,7 @@ responsibilities:
   - 분석 단위 키(entity_key), 기준 시점 이벤트(reference_time), 코호트(cohort), 모집단 조건, 타깃, 피처를 정한다.
   - 모든 컬럼은 스키마에 있는 table.column으로 쓴다.
   - 피처마다 원천 컬럼 하나와 집계 방법(agg), 관련 요구사항 ID를 적는다. 기준 이벤트 1건에 원천 행이 여러 개면(결제·주문 상품 등) sum·max·count 등으로 집계한다.
+  - 판단에 쓴 검색 문서의 doc_id를 citations에 적는다. 프롬프트에 표시된 doc_id 값만 쓴다.
 prohibitions:
   - 기준 시점 이후에 생기거나 확정되는 정보를 피처에 쓰지 말 것 (예: 배송 완료일, 리뷰 점수, 이후 주문). 스키마의 available_at·time_rank를 확인한다.
   - 기준 시점이나 타깃 정의를 요구사항과 다르게 임의로 바꾸지 말 것. 바꾸는 편이 낫다면 rationale에 대안으로만 적는다.

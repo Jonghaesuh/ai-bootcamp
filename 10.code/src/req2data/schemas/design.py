@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from req2data.schemas.base import LLMOutput
+from req2data.schemas.citation import Citation
 
 
 class TargetDefinition(LLMOutput):
@@ -41,6 +42,10 @@ class DatasetDesign(LLMOutput):
     sql: str = Field(description="마트 SQL. 키·기준 시점·피처·타깃·분할 컬럼을 출력")
     rationale: str = Field(
         default="", description="분석 단위→기준 시점→타깃→피처→누수→분할 순 추론 요약"
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="판단 근거로 쓴 검색 문서. doc_id는 프롬프트에 표시된 값 그대로",
     )
     # 아래는 Agent가 SQL 실행 후 채운다.
     row_count: int | None = None
@@ -96,4 +101,8 @@ class DesignPlan(LLMOutput):
     features: list[FeaturePlan] = Field(default_factory=list)
     rationale: str = Field(
         default="", description="분석 단위→기준 시점→타깃→피처→누수 순 판단 요약"
+    )
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="판단 근거로 쓴 검색 문서. doc_id는 프롬프트에 표시된 값 그대로",
     )

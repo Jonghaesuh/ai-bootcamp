@@ -60,6 +60,7 @@ def test_repurchase_scenario(deps, llm):
     snap = _run(graph, Command(resume={"answers": {}}), config)
     assert not snap.next
     artifacts = snap.values["artifacts"]
+    assert "## 참고 근거" in Path(artifacts["summary.md"]).read_text(encoding="utf-8")
     for name in (
         "summary.md",
         "requirement_spec.md",

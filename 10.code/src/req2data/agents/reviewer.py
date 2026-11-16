@@ -1,6 +1,7 @@
 import logging
 from typing import Any
 
+from langchain_core.documents import Document
 from sqlglot import exp
 from sqlglot.lineage import lineage
 
@@ -77,10 +78,10 @@ class Reviewer(BaseAgent):
         issues = " ".join(
             f"{c.name} {c.evidence}" for c in checks if c.status != CheckStatus.passed
         )
+        retrieved: list[Document] = []
+        guide = self.knowledge(issues, "guide", k=3, title="데이터셋 설계 가이드", into=retrieved)
         narrative = self.structured(
-            self.system(
-                state, extra=self.knowledge(issues, "guide", k=3, title="데이터셋 설계 가이드")
-            ),
+            self.system(state, extra=guide),
             self.prompt.task(
                 "narrative",
                 design=as_json(
@@ -103,6 +104,8 @@ class Reviewer(BaseAgent):
             fallback=lambda: ReviewNarrative(summary=default_summary(report)),
         )
         report.summary = narrative.value.summary
+        citations, rejected = self.cite(narrative.value, retrieved)
+        report.citations = narrative.value.citations
         if report.rework_targets and narrative.value.additional_feedback:
             report.feedback.setdefault(report.rework_targets[0], []).extend(
                 narrative.value.additional_feedback
@@ -116,12 +119,15 @@ class Reviewer(BaseAgent):
         return {
             "review_report": report.model_dump(mode="json"),
             "deferred_questions": deferred,
+            "citations": citations,
             "trace": [
                 self.result_event(
                     narrative,
                     passed=report.passed,
                     failed=[c.name for c in checks if c.status == CheckStatus.fail],
                     feasibility=report.feasibility,
+                    citations=len(citations),
+                    rejected_citations=rejected,
                 )
             ],
         }

@@ -3,6 +3,7 @@ from typing import Literal
 from pydantic import Field
 
 from req2data.schemas.base import LLMOutput
+from req2data.schemas.citation import Citation
 
 
 class ColumnRef(LLMOutput):
@@ -46,6 +47,10 @@ class DataMapping(LLMOutput):
     )
     rejected_refs: list[str] = Field(default_factory=list, description="스키마에 없어 제거한 참조")
     rationale: str = ""
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="판단 근거로 쓴 검색 문서. doc_id는 프롬프트에 표시된 값 그대로",
+    )
 
     def column_refs(self) -> set[str]:
         refs = {c.ref for item in self.items for c in item.columns}

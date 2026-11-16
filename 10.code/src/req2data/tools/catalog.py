@@ -59,7 +59,7 @@ def schema_index(client: CatalogClient, tables: list[str]) -> dict[str, dict[str
 def hit_to_document(hit: dict[str, Any]) -> Document:
     """search_catalog 결과 dict → LangChain Document."""
     return Document(
-        id=hit["doc_id"],
+        id=hit.get("doc_id") or f"{hit.get('table')}.{hit.get('column')}",
         page_content=hit.get("text", ""),
         metadata={k: hit.get(k, "") for k in ("source", "table", "column", "title", "score")},
     )

@@ -1,5 +1,7 @@
 import re
 
+from langchain_core.documents import Document
+
 from req2data.agents.base import BaseAgent
 from req2data.graph.state import Req2DataState
 from req2data.schemas import ClarificationQuestion, RequirementItem, RequirementSpec
@@ -30,13 +32,18 @@ class RequirementAnalyst(BaseAgent):
         answered = state.get("answered") or []
         required = self.deps.cfg("requirement.required_fields", list(FIELD_QUESTIONS))
 
+        retrieved: list[Document] = []
         extra = "\n\n".join(
             filter(
                 None,
                 [
                     self.deps.fewshots.render("requirement_spec", document),
-                    self.knowledge(document, "glossary", k=4, title="비즈니스 용어집"),
-                    self.knowledge(document, "case", k=2, title="과거 승인 설계 사례"),
+                    self.knowledge(
+                        document, "glossary", k=4, title="비즈니스 용어집", into=retrieved
+                    ),
+                    self.knowledge(
+                        document, "case", k=2, title="과거 승인 설계 사례", into=retrieved
+                    ),
                 ],
             )
         )
@@ -47,6 +54,7 @@ class RequirementAnalyst(BaseAgent):
             fallback=lambda: fallback_spec(document),
         )
         spec = result.value
+        citations, rejected = self.cite(spec, retrieved)
         rounds = state.get("question_rounds", 0)
         questions = self._questions(spec, required, answered, rounds)
 
@@ -63,6 +71,7 @@ class RequirementAnalyst(BaseAgent):
         return {
             "requirement_spec": spec.model_dump(mode="json"),
             "pending_questions": [q.model_dump(mode="json") for q in questions],
+            "citations": citations,
             "trace": [
                 self.result_event(
                     result,
@@ -70,6 +79,8 @@ class RequirementAnalyst(BaseAgent):
                     blocking=completeness < self.deps.cfg("requirement.min_completeness", 0.7),
                     questions=len(questions),
                     assumed=assumed,
+                    citations=len(citations),
+                    rejected_citations=rejected,
                 )
             ],
         }

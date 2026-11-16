@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from req2data.schemas.base import LLMOutput
+from req2data.schemas.citation import Citation
 from req2data.schemas.requirement import ClarificationQuestion
 from req2data.schemas.routing import AgentName
 
@@ -43,6 +44,7 @@ class ReviewReport(BaseModel):
     feasibility: Literal["ok", "low", "infeasible"] = "ok"
     confirmations: list[ClarificationQuestion] = Field(default_factory=list)
     summary: str = ""
+    citations: list[Citation] = Field(default_factory=list, description="검증 설명의 근거 문서")
 
 
 class ReviewNarrative(LLMOutput):
@@ -50,3 +52,7 @@ class ReviewNarrative(LLMOutput):
 
     summary: str
     additional_feedback: list[str] = Field(default_factory=list)
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="판단 근거로 쓴 검색 문서. doc_id는 프롬프트에 표시된 값 그대로",
+    )

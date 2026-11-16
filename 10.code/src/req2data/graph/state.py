@@ -42,6 +42,8 @@ class Req2DataState(TypedDict, total=False):
     feedback: dict[str, list[str]]  # Agent → 다음 시도 프롬프트에 넣을 피드백
     change_request: str | None
 
+    citations: Annotated[list[dict], operator.add]  # Agent가 근거로 인용한 검색 문서
+
     route: dict
     trace: Annotated[list[dict], operator.add]  # UI 진행 표시용 이벤트 로그
 

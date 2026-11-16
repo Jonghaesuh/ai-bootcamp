@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import Field
 
 from req2data.schemas.base import LLMOutput
+from req2data.schemas.citation import Citation
 from req2data.schemas.routing import AgentName
 
 
@@ -43,6 +44,10 @@ class RequirementSpec(LLMOutput):
     requirement_items: list[RequirementItem] = Field(default_factory=list)
     open_questions: list[ClarificationQuestion] = Field(default_factory=list)
     rationale: str = ""
+    citations: list[Citation] = Field(
+        default_factory=list,
+        description="판단 근거로 쓴 검색 문서. doc_id는 프롬프트에 표시된 값 그대로",
+    )
 
     def missing_fields(self, required: list[str]) -> list[str]:
         return [f for f in required if not (getattr(self, f, None) or "").strip()]

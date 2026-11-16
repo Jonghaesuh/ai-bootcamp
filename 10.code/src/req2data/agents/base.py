@@ -4,17 +4,20 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from langchain_core.documents import Document
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel
 
+from req2data.agents.citations import citation_records, validate_citations
 from req2data.agents.fewshot import FewShotSelector
 from req2data.agents.prompts import PromptRegistry
 from req2data.config import Settings, get_settings
 from req2data.graph.state import Req2DataState
 from req2data.llm import StructuredResult, get_chat_model, invoke_structured
-from req2data.tools.catalog import CatalogClient
+from req2data.llm.chains import retrieval_chain
+from req2data.tools.catalog import CatalogClient, CatalogRetriever
 
 log = logging.getLogger(__name__)
 
@@ -121,19 +124,40 @@ class BaseAgent:
             return f"(추가 조사 실패: {exc})"
         return _summarize_react(messages)
 
-    def knowledge(self, query: str, source: str, k: int = 3, title: str = "") -> str:
-        """RAG 검색 결과를 프롬프트용 블록으로. 카탈로그가 없거나 검색이 실패하면 빈 문자열."""
+    def knowledge(
+        self,
+        query: str,
+        source: str,
+        k: int = 3,
+        title: str = "",
+        into: list[Document] | None = None,
+    ) -> str:
+        """RAG 검색 결과를 프롬프트용 블록으로. 검색한 문서는 인용 검증에 쓰도록 `into`에 모은다.
+        카탈로그가 없거나 검색이 실패하면 빈 문자열."""
         if self.deps.catalog is None or not query.strip():
             return ""
+        chain = retrieval_chain(CatalogRetriever(client=self.deps.catalog, source=source, k=k))
         try:
-            hits = self.deps.catalog.search_catalog(query, k=k, source=source)
+            found = chain.invoke(query)
         except Exception as exc:
             log.warning("%s: %s 검색 실패: %s", self.name, source, exc)
             return ""
-        if not hits:
+        if not found["docs"]:
             return ""
-        body = "\n\n".join(f"(출처: {h['doc_id']})\n{h['text']}" for h in hits)
-        return f"## {title or source} (검색 결과, 근거로 인용할 때는 출처를 밝힐 것)\n{body}"
+        if into is not None:
+            into.extend(found["docs"])
+        return (
+            f"## {title or source} (검색 결과, 근거로 쓴 문서는 대괄호 안의 doc_id를 citations에 적을 것)\n"
+            f"{found['context']}"
+        )
+
+    def cite(self, value: Any, retrieved: list[Document]) -> tuple[list[dict], list[str]]:
+        """LLM 출력의 citations를 검색 문서와 대조한다. (State에 실을 기록, 버린 doc_id)를 돌려준다."""
+        kept, rejected = validate_citations(value.citations, retrieved)
+        value.citations = kept
+        if rejected:
+            log.info("%s: 검색되지 않은 문서 인용 제거: %s", self.name, rejected)
+        return citation_records(self.name, kept, retrieved), rejected
 
     def result_event(self, result: StructuredResult, **detail: Any) -> dict:
         return {

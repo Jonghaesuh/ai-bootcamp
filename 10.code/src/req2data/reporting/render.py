@@ -198,3 +198,29 @@ def case_markdown(
             ],
         ]
     return "\n".join(lines) + "\n"
+
+
+def citations_md(citations: list[dict]) -> str:
+    """Agent가 판단 근거로 인용한 검색 문서 표. 재작업으로 같은 인용이 쌓이면 마지막 것만 남긴다."""
+    latest = {(c["agent"], c["doc_id"]): c for c in citations}
+    if not latest:
+        return "## 참고 근거\n\n인용된 문서가 없습니다.\n"
+
+    def cell(value: object) -> str:
+        return str(value).replace("|", "/").replace("\n", " ")
+
+    rows = [
+        f"| {cell(c['agent'])} | {cell(c.get('title') or c['doc_id'])} | {cell(c.get('source', ''))} "
+        f"| {cell(c.get('used_for', ''))} |"
+        for c in latest.values()
+    ]
+    return "\n".join(
+        [
+            "## 참고 근거",
+            "",
+            "| Agent | 문서 | 출처 | 사용처 |",
+            "| --- | --- | --- | --- |",
+            *rows,
+            "",
+        ]
+    )

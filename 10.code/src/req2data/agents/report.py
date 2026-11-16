@@ -41,7 +41,9 @@ class ReportNode(BaseAgent):
         out = Path(self.deps.artifact_dir) / state["project_id"]
         out.mkdir(parents=True, exist_ok=True)
         files = {
-            "summary.md": summary_md(summary),
+            "summary.md": summary_md(summary).rstrip("\n")
+            + "\n\n"
+            + render.citations_md(state.get("citations") or []),
             "requirement_spec.md": render.spec_md(spec),
             "data_mapping.md": render.mapping_md(mapping),
             "dataset_design.md": render.design_md(design),

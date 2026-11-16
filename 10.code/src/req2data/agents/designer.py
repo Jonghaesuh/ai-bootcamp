@@ -1,6 +1,8 @@
 import re
 from typing import Any
 
+from langchain_core.documents import Document
+
 from req2data.agents.base import BaseAgent, as_json
 from req2data.agents.requirement import render_answered
 from req2data.agents.sql_builder import CohortSQLBuilder, PlanError
@@ -53,6 +55,7 @@ class DatasetDesigner(BaseAgent):
         requirements = as_json(spec.model_copy(update={"open_questions": []}))
         mapping_text = as_json(mapping)
         query = " ".join(filter(None, [spec.prediction_target, spec.target_definition]))
+        retrieved: list[Document] = []
         extra = "\n\n".join(
             filter(
                 None,
@@ -63,8 +66,9 @@ class DatasetDesigner(BaseAgent):
                         "guide",
                         k=4,
                         title="데이터셋 설계 가이드",
+                        into=retrieved,
                     ),
-                    self.knowledge(query, "case", k=2, title="과거 승인 설계 사례"),
+                    self.knowledge(query, "case", k=2, title="과거 승인 설계 사례", into=retrieved),
                 ],
             )
         )
@@ -90,11 +94,18 @@ class DatasetDesigner(BaseAgent):
             DesignPlan,
             fallback=lambda: fallback_plan(spec, mapping),
         )
+        citations, rejected = self.cite(result.value, retrieved)
         design, fixes = self.build(system, result.value, schema)
-        design = design.model_copy(update={"version": state.get("design_version", 0) + 1})
+        design = design.model_copy(
+            update={
+                "version": state.get("design_version", 0) + 1,
+                "citations": result.value.citations,
+            }
+        )
         return {
             "dataset_design": design.model_dump(mode="json"),
             "design_version": design.version,
+            "citations": citations,
             "trace": [
                 self.result_event(
                     result,
@@ -103,6 +114,8 @@ class DatasetDesigner(BaseAgent):
                     target_ratio=design.target_ratio,
                     sql_error=design.sql_error,
                     sql_fixes=fixes,
+                    citations=len(citations),
+                    rejected_citations=rejected,
                 )
             ],
         }

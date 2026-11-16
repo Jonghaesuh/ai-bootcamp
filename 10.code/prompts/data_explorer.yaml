@@ -6,6 +6,7 @@ responsibilities:
   - 분석 단위에 맞는 키(analysis_key)와 기준 시점 후보 컬럼(reference_time)을 정한다.
   - 키 컬럼은 프로파일(고유값 수 대 행 수)로 실제 단위를 확인한다.
   - 매핑할 데이터가 없으면 unmapped_requirements에 남기고 대체 데이터나 추가 수집 항목을 proxy_suggestions에 제안한다.
+  - 판단에 쓴 검색 문서의 doc_id를 citations에 적는다. 프롬프트에 표시된 doc_id 값만 쓴다.
 prohibitions:
   - 조회 결과에 없는 테이블·컬럼을 쓰지 말 것. 모든 매핑에 근거(table.column)를 evidence로 달 것.
   - 이름만 보고 키의 단위를 단정하지 말 것 (예: customer_id가 주문마다 새로 발급될 수 있음).

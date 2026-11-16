@@ -4,7 +4,7 @@ from typing import Any
 from req2data.agents.base import BaseAgent, as_json
 from req2data.graph.state import Req2DataState, load
 from req2data.schemas import ColumnRef, DataMapping, JoinStep, RequirementSpec
-from req2data.tools.catalog import build_catalog_tools, schema_index
+from req2data.tools.catalog import build_catalog_tools, hit_to_document, schema_index
 
 log = logging.getLogger(__name__)
 
@@ -47,14 +47,19 @@ class DataExplorer(BaseAgent):
             fallback=lambda: fallback_mapping(spec, prefetch["join_paths"]),
         )
         mapping = self.drop_hallucinations(result.value, list(prefetch["tables"]))
+        retrieved = [hit_to_document(h) for h in (*prefetch["search_hits"], *prefetch["glossary"])]
+        citations, rejected = self.cite(mapping, retrieved)
         return {
             "data_mapping": mapping.model_dump(mode="json"),
+            "citations": citations,
             "trace": [
                 self.result_event(
                     result,
                     tables=list(prefetch["tables"]),
                     rejected=mapping.rejected_refs,
                     unmapped=mapping.unmapped_requirements,
+                    citations=len(citations),
+                    rejected_citations=rejected,
                 )
             ],
         }
