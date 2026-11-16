@@ -4,11 +4,11 @@ from dataclasses import replace
 
 from langchain_core.documents import Document
 
-from req2data.agents import RequirementAnalyst
+from req2data.agents import RequirementAnalyst, Reviewer
 from req2data.agents.citations import citation_records, validate_citations
 from req2data.graph import new_project_state
 from req2data.reporting.render import citations_md
-from req2data.schemas import Citation
+from req2data.schemas import CheckStatus, Citation, DataMapping, DatasetDesign, TargetDefinition
 
 RETRIEVED = [
     Document(
@@ -77,3 +77,30 @@ def test_citations_md_table_and_empty():
     assert "## 참고 근거" in md
     assert "| requirement_analyst | 재구매 | glossary | 타깃 정의 |" in md
     assert "인용된 문서가 없습니다" in citations_md([])
+
+
+def _design(citations: list[Citation]) -> DatasetDesign:
+    return DatasetDesign(
+        analysis_unit="고객",
+        entity_key="customer_unique_id",
+        reference_time="orders.order_purchase_timestamp",
+        target=TargetDefinition(
+            description="90일 내 재구매", window_days=90, positive_condition="repeat_event"
+        ),
+        sql="SELECT 1",
+        citations=citations,
+    )
+
+
+def test_grounding_warns_when_design_has_no_citation(deps):
+    cite = [Citation(doc_id="column:orders.order_id", used_for="키")]
+    r = Reviewer(deps).check_grounding(DataMapping(citations=cite), _design([]))
+    assert r.name == "grounding" and r.status == CheckStatus.warn
+    assert "dataset_designer" in r.evidence and "data_explorer" not in r.evidence
+    assert r.rework_target is None
+
+
+def test_grounding_passes_when_both_cite(deps):
+    cite = [Citation(doc_id="guide:dataset_design_guide#1", used_for="기준 시점")]
+    r = Reviewer(deps).check_grounding(DataMapping(citations=cite), _design(cite))
+    assert r.status == CheckStatus.passed and "2건" in r.evidence

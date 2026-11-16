@@ -73,6 +73,7 @@ class Reviewer(BaseAgent):
             eda = self.eda(design)
             checks += self.check_quality(design, eda)
         checks.append(self.check_coverage(spec, mapping, design))
+        checks.append(self.check_grounding(mapping, design))
 
         report = self.compile(design, checks, eda, confirmations)
         issues = " ".join(
@@ -405,6 +406,23 @@ class Reviewer(BaseAgent):
         )
 
     # ---- 종합 ----
+
+    def check_grounding(self, mapping: DataMapping, design: DatasetDesign) -> CheckResult:
+        """매핑과 설계가 검색 문서(카탈로그·용어집·가이드)를 근거로 인용했는지. 인용은 Agent가
+        실제로 검색한 문서로 이미 걸러져 있다. 근거가 없어도 설계를 되돌리지는 않고 경고만 남긴다."""
+        cited = {"data_explorer": mapping.citations, "dataset_designer": design.citations}
+        missing = [agent for agent, citations in cited.items() if not citations]
+        if missing:
+            return CheckResult(
+                name="grounding",
+                status=CheckStatus.warn,
+                evidence=f"인용 근거 없음: {', '.join(missing)}",
+            )
+        return CheckResult(
+            name="grounding",
+            status=CheckStatus.passed,
+            evidence=f"매핑·설계가 검색 문서를 근거로 인용 ({sum(map(len, cited.values()))}건)",
+        )
 
     def compile(
         self,
