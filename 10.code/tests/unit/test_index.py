@@ -3,7 +3,7 @@ from langchain_chroma import Chroma
 from langchain_core.documents import Document
 
 from req2data.rag.embeddings import UnavailableEmbeddings
-from req2data.rag.index import KnowledgeIndex
+from req2data.rag.index import KnowledgeIndex, corpus_fingerprint
 from tests.fixtures.rag import HashEmbeddings
 
 DOCS = [
@@ -56,3 +56,37 @@ def test_rebuild_keeps_old_index_when_embeddings_down(tmp_path):
 def test_duplicate_ids_rejected(tmp_path):
     with pytest.raises(ValueError, match="중복 문서 ID"):
         KnowledgeIndex(HashEmbeddings(), tmp_path).rebuild([DOCS[0], DOCS[0]])
+
+
+class FlakyEmbeddings(HashEmbeddings):
+    """N번째 문서 임베딩 호출에서 실패한다 (분당 요청 제한 등 일시 오류)."""
+
+    def __init__(self, fail_on: int):
+        self.calls = 0
+        self.fail_on = fail_on
+
+    def embed_documents(self, texts: list[str]) -> list[list[float]]:
+        self.calls += 1
+        if self.calls == self.fail_on:
+            raise RuntimeError("429 Too Many Requests")
+        return super().embed_documents(texts)
+
+
+@pytest.mark.parametrize("fail_on", [1, 2])
+def test_rebuild_failure_midway_keeps_previous_index(tmp_path, fail_on):
+    """재구축 도중 임베딩이 실패해도 기존 인덱스가 비거나 일부만 남지 않는다."""
+    docs = [
+        Document(id=f"guide:d#{i}", page_content=f"문서 {i} 재구매", metadata={"source": "guide"})
+        for i in range(70)  # 배치(64)가 두 번 나뉜다
+    ]
+    KnowledgeIndex(HashEmbeddings(), tmp_path, embedding_name="hash").rebuild(docs)
+    broken = KnowledgeIndex(FlakyEmbeddings(fail_on), tmp_path, embedding_name="hash")
+    changed = [
+        *docs,
+        Document(id="guide:new", page_content="새 문서", metadata={"source": "guide"}),
+    ]
+    with pytest.raises(RuntimeError):
+        broken.rebuild(changed)
+    assert broken.count() == 70 and len(broken.documents()) == 70
+    assert broken.is_current(corpus_fingerprint(docs))
+    assert not broken.is_current(corpus_fingerprint(changed))

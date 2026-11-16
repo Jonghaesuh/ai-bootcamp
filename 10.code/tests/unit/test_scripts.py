@@ -52,6 +52,16 @@ def test_ensure_current_rebuilds_when_sources_change(tmp_path):
     assert reopened.search("통신 해지", source="case")[0]["doc_id"] == "case:telecom#1"
 
 
+def test_ensure_current_does_not_stop_startup_on_unreadable_source(tmp_path):
+    """읽을 수 없는 지식 소스가 있어도 서비스 시작을 막지 않고 기존 인덱스로 계속한다."""
+    paths, store = _paths(tmp_path), tmp_path / "chroma"
+    kb = KnowledgeBase(paths, HashEmbeddings(), persist_dir=store, embedding_name="a")
+    counts = kb.rebuild()
+    paths.cases.mkdir()
+    (paths.cases / "broken.md").write_bytes(b"\xff\xfe\x00 not utf-8")
+    assert kb.ensure_current() is False and kb.index.count() == sum(counts.values())
+
+
 def test_rag_flow_runs_without_llm(kb):
     out = load_script("rag_flow").run(kb, "재구매 가능성이 낮은 고객", llm=None)
     assert set(out["documents"]) == {"catalog", "glossary", "guide"}

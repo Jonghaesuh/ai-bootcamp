@@ -5,6 +5,11 @@ from langchain_core.documents import Document
 from req2data.schemas import Citation
 
 
+def normalize_doc_id(doc_id: str) -> str:
+    """프롬프트가 문서를 [doc_id]로 보여 주므로 모델이 붙여 쓴 대괄호와 공백을 걷어낸다."""
+    return doc_id.strip().strip("[]").strip()
+
+
 def validate_citations(
     citations: list[Citation], retrieved: list[Document]
 ) -> tuple[list[Citation], list[str]]:
@@ -14,6 +19,7 @@ def validate_citations(
     rejected: list[str] = []
     seen: set[str] = set()
     for c in citations:
+        c = c.model_copy(update={"doc_id": normalize_doc_id(c.doc_id)})
         if c.doc_id in seen:
             continue
         seen.add(c.doc_id)

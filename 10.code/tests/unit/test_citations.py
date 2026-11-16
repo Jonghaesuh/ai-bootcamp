@@ -34,6 +34,16 @@ def test_validate_citations_drops_unknown_and_duplicate():
     assert [c.doc_id for c in kept] == ["glossary:재구매"] and rejected == ["glossary:없는용어"]
 
 
+def test_validate_citations_accepts_bracketed_and_padded_ids():
+    """프롬프트가 문서를 [doc_id]로 보여 주므로, 모델이 대괄호나 공백을 붙여 적어도 같은 문서로 본다."""
+    cites = [
+        Citation(doc_id="[glossary:재구매]", used_for="타깃"),
+        Citation(doc_id=" glossary:재구매 "),
+    ]
+    kept, rejected = validate_citations(cites, RETRIEVED)
+    assert [c.doc_id for c in kept] == ["glossary:재구매"] and rejected == []
+
+
 def test_citation_records_carry_source_and_title():
     kept = [Citation(doc_id="glossary:재구매", used_for="타깃 정의")]
     assert citation_records("requirement_analyst", kept, RETRIEVED) == [

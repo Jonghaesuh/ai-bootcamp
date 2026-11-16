@@ -44,11 +44,11 @@ class KnowledgeIndex:
         self.store = self._open()
         self._docs: list[Document] | None = None
 
-    def _open(self, corpus: str = "") -> Chroma:
+    def _open(self, corpus: str = "", name: str | None = None) -> Chroma:
         """컬렉션 메타데이터에 만든 임베딩 이름과 문서 지문을 남겨, 다시 만들어야 하는지 판정한다."""
         return Chroma(
             client=self.client,
-            collection_name=self.collection_name,
+            collection_name=name or self.collection_name,
             embedding_function=self.embeddings,
             collection_metadata={
                 "hnsw:space": "cosine",
@@ -58,21 +58,42 @@ class KnowledgeIndex:
         )
 
     def rebuild(self, docs: list[Document]) -> int:
-        """컬렉션을 지우고 다시 만든다. 문서 ID는 고유해야 한다."""
+        """인덱스를 새로 만든다. 문서 ID는 고유해야 한다.
+        임시 컬렉션에 모두 저장한 뒤에야 기존 컬렉션과 바꾸므로, 도중에 임베딩이 실패해도
+        기존 인덱스가 비거나 일부만 남지 않는다."""
         ids = [d.id for d in docs]
         if len(ids) != len(set(ids)):
             dup = sorted({i for i in ids if ids.count(i) > 1})
             raise ValueError(f"중복 문서 ID: {dup}")
-        # 임베딩 서버를 먼저 확인해, 오류 시 기존 인덱스가 지워지지 않게 한다
-        self.embeddings.embed_query("ping")
-        self.store.delete_collection()
+        staging_name = f"{self.collection_name}__staging"
+        self._drop(staging_name)
+        staging = self._open(corpus_fingerprint(docs), name=staging_name)
+        try:
+            self._add(staging, docs)
+        except Exception:
+            self._drop(staging_name)
+            raise
+        self._drop(self.collection_name)
+        self.client.get_collection(staging_name).modify(name=self.collection_name)
         self.store = self._open(corpus_fingerprint(docs))
-        return self.upsert(docs)
+        self._docs = None
+        log.info("인덱스 %s: %d개 문서로 재구축", self.collection_name, len(docs))
+        return len(docs)
 
-    def upsert(self, docs: list[Document]) -> int:
+    def _drop(self, name: str) -> None:
+        try:
+            self.client.delete_collection(name)
+        except Exception:  # 없는 컬렉션
+            pass
+
+    @staticmethod
+    def _add(store: Chroma, docs: list[Document]) -> None:
         for i in range(0, len(docs), BATCH):
             batch = docs[i : i + BATCH]
-            self.store.add_documents(batch, ids=[d.id for d in batch])
+            store.add_documents(batch, ids=[d.id for d in batch])
+
+    def upsert(self, docs: list[Document]) -> int:
+        self._add(self.store, docs)
         self._docs = None
         log.info("인덱스 %s: %d개 문서 반영", self.collection_name, len(docs))
         return len(docs)

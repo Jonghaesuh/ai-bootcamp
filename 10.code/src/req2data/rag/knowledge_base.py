@@ -101,11 +101,11 @@ class KnowledgeBase:
     def ensure_current(self) -> bool:
         """인덱스가 지금 임베딩·지식 소스와 맞지 않으면 다시 만든다 (서비스 시작 시 호출).
         임베딩 서버 오류 등으로 실패하면 기존 인덱스를 두고 False를 돌려준다 (검색은 BM25로 계속)."""
-        if self.index.is_current(corpus_fingerprint(self.documents())):
-            return True
         try:
+            if self.index.is_current(corpus_fingerprint(self.documents())):
+                return True
             counts = self.rebuild()
-        except Exception as exc:
+        except Exception as exc:  # 임베딩 오류, 읽을 수 없는 지식 소스 등
             log.warning("RAG 인덱스 재구축 실패, 기존 인덱스로 계속: %s", exc)
             return False
         log.info("RAG 인덱스 재구축: %s (%s)", counts, self.index.built_with())

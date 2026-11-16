@@ -75,9 +75,10 @@ submit:
 
 # 제출용 소스 zip → dist/req2data-agent-source.zip (가상환경·Docker 이미지 제외).
 # storage/와 data/db/는 gitignore 대상이라 git에 등록된 파일 목록에 직접 더한다.
+# 한글 파일 이름이 이스케이프되지 않도록 quotePath를 끄고, 작업용 설계·계획 문서(docs/superpowers)는 뺀다.
 source-zip:
 	mkdir -p dist && rm -f dist/req2data-agent-source.zip
-	(git ls-files; ls data/db/olist.duckdb data/catalog/profiles.json; find storage/chroma -type f) | zip -q dist/req2data-agent-source.zip -@
+	(git -c core.quotePath=false ls-files | grep -v '^docs/superpowers/'; ls data/db/olist.duckdb data/catalog/profiles.json; find storage/chroma -type f) | zip -q dist/req2data-agent-source.zip -@
 
 # Ollama가 필요한 테스트 (실제 bge-m3 검색 품질 등)
 test-llm:
