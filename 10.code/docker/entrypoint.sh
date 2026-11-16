@@ -6,21 +6,18 @@
 #   index         RAG 인덱스를 지금 임베딩 설정으로 다시 구축
 #   그 외          그대로 실행 (예: bash, python ...)
 #
-# LLM: Azure OpenAI(GPT). AOAI_ENDPOINT·AOAI_API_KEY(또는 AZURE_OPENAI_*)가 있으면 실제 GPT로,
-#      없으면 녹화 재생(데모 모드)으로 실행한다. DEMO_MODE를 직접 주면 그 값을 따른다.
+# LLM: Azure OpenAI(GPT). AOAI_ENDPOINT·AOAI_API_KEY(또는 AZURE_OPENAI_*)가 필요하다.
 set -e
 cd /app
 
-if [ -z "${DEMO_MODE:-}" ]; then
-    if [ -n "${AOAI_API_KEY:-${AZURE_OPENAI_API_KEY:-}}" ] && [ -n "${AOAI_ENDPOINT:-${AZURE_OPENAI_ENDPOINT:-}}" ]; then
-        DEMO_MODE=false
-    else
-        DEMO_MODE=true
-    fi
-fi
+# 데모 녹화는 이미지에 들어 있지 않다. 키가 없으면 LLM 호출이 실패해 규칙 기반 기본값으로 진행한다.
+DEMO_MODE="${DEMO_MODE:-false}"
 export DEMO_MODE
+if [ -z "${AOAI_API_KEY:-${AZURE_OPENAI_API_KEY:-}}" ] || [ -z "${AOAI_ENDPOINT:-${AZURE_OPENAI_ENDPOINT:-}}" ]; then
+    echo "경고: AOAI_ENDPOINT·AOAI_API_KEY가 없습니다. LLM 없이 규칙 기반 기본값으로만 동작합니다." >&2
+fi
 
-# 이미지의 인덱스는 bge-m3로 만든 것이라, GPT 임베딩을 쓸 때는 시작 시 한 번 다시 만든다 (83개 문서, 수 초).
+# 인덱스를 만든 임베딩이나 지식 소스가 지금 설정과 다르면 시작 시 한 번 다시 만든다 (수 초).
 # 실패해도 기존 인덱스로 키워드(BM25) 검색을 계속한다.
 ensure_index() {
     [ "$DEMO_MODE" = "true" ] && return 0

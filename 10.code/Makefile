@@ -1,4 +1,4 @@
-.PHONY: setup env models data index mcp api ui run demo record up up-demo down submit test test-llm lint
+.PHONY: setup env models data index rag-flow check mcp api ui run demo record up up-demo down submit source-zip test test-llm lint
 
 setup: env
 	uv sync --all-groups --all-extras
@@ -19,6 +19,14 @@ data:
 index:
 	uv run python scripts/build_index.py
 
+# RAG 흐름을 단계별로 실행: 전처리 → 인덱싱 → 검색 → 근거 포함 응답
+rag-flow:
+	uv run python scripts/rag_flow.py
+
+# 실행 환경 점검: LLM·임베딩 호출, 인덱스, 샘플 1건 전체 실행
+check:
+	uv run python scripts/check_env.py --full
+
 # MCP 카탈로그 서버 (PRD 2.5 B에서 구현 예정)
 mcp:
 	uv run python -m mcp_catalog.server
@@ -33,7 +41,7 @@ ui:
 run:
 	$(MAKE) -j2 api ui
 
-# LLM 없이 기록된 응답으로 실행 (demo/recordings)
+# LLM 없이 기록된 응답으로 실행 (demo/recordings, 녹화는 make record로 직접 만든다)
 demo:
 	DEMO_MODE=true $(MAKE) run
 

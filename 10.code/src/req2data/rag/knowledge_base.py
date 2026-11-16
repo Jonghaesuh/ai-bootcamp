@@ -1,5 +1,6 @@
 """RAG 진입점: 지식 소스 경로 → 문서 → 인덱스 → 검색기. 승인된 설계를 사례로 추가하는 장기 기억 쓰기도 담당한다."""
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,10 +12,12 @@ from req2data.config import Settings, get_settings
 from req2data.rag.documents import build_documents, markdown_chunks
 from req2data.rag.embeddings import get_embeddings
 from req2data.rag.fk_graph import FKGraph
-from req2data.rag.index import KnowledgeIndex
+from req2data.rag.index import KnowledgeIndex, corpus_fingerprint
 from req2data.rag.profiling import load_profiles
 from req2data.rag.retriever import HybridRetriever, hit_dict
 from req2data.rag.sources import CatalogSpec, load_catalog_spec, load_glossary
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -94,6 +97,19 @@ class KnowledgeBase:
             source = d.metadata["source"]
             counts[source] = counts.get(source, 0) + 1
         return counts
+
+    def ensure_current(self) -> bool:
+        """인덱스가 지금 임베딩·지식 소스와 맞지 않으면 다시 만든다 (서비스 시작 시 호출).
+        임베딩 서버 오류 등으로 실패하면 기존 인덱스를 두고 False를 돌려준다 (검색은 BM25로 계속)."""
+        if self.index.is_current(corpus_fingerprint(self.documents())):
+            return True
+        try:
+            counts = self.rebuild()
+        except Exception as exc:
+            log.warning("RAG 인덱스 재구축 실패, 기존 인덱스로 계속: %s", exc)
+            return False
+        log.info("RAG 인덱스 재구축: %s (%s)", counts, self.index.built_with())
+        return True
 
     def search(
         self, query: str, k: int | None = None, source: str | list[str] | None = None

@@ -50,6 +50,8 @@ def assemble(
 def build_services(settings: Settings | None = None) -> Services:
     s = settings or get_settings()
     kb = KnowledgeBase.from_settings(s)
+    if not s.demo_mode:
+        kb.ensure_current()  # 임베딩이나 지식 소스가 바뀌었으면 인덱스를 다시 만든다
     catalog = LocalCatalogClient.from_settings(s, kb=kb)
     deps = wrap_for_demo(AgentDeps.from_settings(s, catalog=catalog), s)
     s.checkpoint_db.parent.mkdir(parents=True, exist_ok=True)
