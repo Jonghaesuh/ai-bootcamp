@@ -1,102 +1,86 @@
-# Req2Data Agent 제출용 Docker 이미지 실행 안내
+# Req2Data Agent 제출물 실행 안내
 
-요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 자동으로 만드는 LangGraph Multi-Agent 서비스입니다. 이미지 하나에 API·UI·데이터·RAG 인덱스·데모 녹화·테스트가 모두 들어 있습니다. LLM은 **Azure OpenAI GPT**(`AOAI_*` 환경변수)를 쓰고, 키를 넘기지 않으면 **인터넷·LLM 없이** 녹화 재생(데모 모드)으로 실행됩니다.
+요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 만드는 LangGraph Multi-Agent 서비스입니다. 제출물은 소스 zip 하나입니다.
+
+평가 항목별 구현 위치는 [README.md](../README.md) 맨 위의 표에 있습니다.
 
 ## 1. 제출 파일
 
-| 파일 | 대상 환경 |
-| --- | --- |
-| `req2data-agent-submit-amd64.tar.gz` | x86_64: 일반 Linux 서버, Windows, Intel Mac |
-| `req2data-agent-submit-arm64.tar.gz` | ARM: Apple Silicon Mac, ARM 서버 |
+`req2data-agent-source.zip`: 소스, 테스트, 프롬프트, 지식 소스(카탈로그·용어집·가이드), 적재된 DuckDB(`data/db/olist.duckdb`), RAG 인덱스(`storage/chroma`)가 들어 있습니다. 가상환경과 Docker 이미지는 들어 있지 않습니다.
 
-두 파일 모두 이미지 이름은 `req2data-agent:submit`이라 아래 명령은 동일합니다. CPU 확인: `uname -m` (`x86_64` → amd64, `arm64`/`aarch64` → arm64).
+필요한 것: Python 3.12, [uv](https://docs.astral.sh/uv/), Azure OpenAI 키.
 
-필요한 것: Docker 20 이상, 디스크 약 3GB, 포트 8000·8501.
-
-## 2. 이미지 불러오기
+## 2. 설치와 환경변수
 
 ```bash
-docker load -i req2data-agent-submit-amd64.tar.gz
+unzip req2data-agent-source.zip -d req2data-agent && cd req2data-agent
+uv sync
 ```
 
-`Loaded image: req2data-agent:submit`가 나오면 됩니다.
+LLM과 임베딩은 Azure OpenAI를 씁니다. 과제 실행 환경의 `AOAI_*` 환경변수를 그대로 읽습니다.
 
-## 3. 동작 확인 (브라우저 없이, 1분 안에)
+| 환경변수 | 용도 | 기본값 |
+| --- | --- | --- |
+| `AOAI_ENDPOINT`, `AOAI_API_KEY` | Azure OpenAI 엔드포인트·키 (`AZURE_OPENAI_ENDPOINT`·`AZURE_OPENAI_API_KEY`도 가능) | 없음 (필수) |
+| `AOAI_DEPLOY_GPT41_MINI` | 채팅 배포 이름 | `gpt-4.1-mini` |
+| `AOAI_DEPLOY_EMBED_3_SMALL` | 임베딩 배포 이름 | `text-embedding-3-small` |
+| `AOAI_API_VERSION` | API 버전 | `2024-10-21` |
+| `AZURE_CHAT_DEPLOYMENT` | 다른 채팅 배포를 쓸 때 | |
+
+키가 없으면 LLM 호출이 실패하고 각 Agent가 규칙 기반 기본값으로 진행합니다. 의미 검색은 키워드 검색(BM25)으로 대체됩니다.
+
+## 3. 동작 확인
 
 ```bash
-docker run --rm req2data-agent:submit test       # 테스트 70개 + 로컬 제공자 4개 건너뜀 (LLM 불필요)
-docker run --rm req2data-agent:submit scenario   # 샘플 01 정의서를 API로 끝까지 실행하고 결과 요약
+uv run pytest -m "not llm" -q                 # 단위 테스트 (LLM 불필요)
+uv run python scripts/check_env.py            # 채팅·JSON 출력·Tool 호출·임베딩·인덱스 점검 (수 초)
+uv run python scripts/check_env.py --full     # 위 점검 + 샘플 01 정의서를 끝까지 실행 (수 분)
+uv run python scripts/rag_flow.py             # RAG 흐름: 전처리 → 인덱싱 → 검색 → 근거 포함 응답
 ```
 
-`scenario` 정상 결과(데모 모드, 수 초):
+`check_env.py`는 단계마다 `[OK]` 또는 `[FAIL]`을 출력합니다. `--full`의 마지막 줄에 행 수, 타깃 비율, 검증 통과 여부, 인용 건수, 산출물 폴더가 나옵니다.
 
-```
-행 수: 86,924, 타깃 비율: 1.96%
-검증: 통과 (모델링 실익 low)
-  - leakage: pass  기준 시점 이후 정보를 쓰는 피처 없음
-  - censoring: pass  모든 행이 90일 타깃 기간을 관측 가능 ...
-```
+들어 있는 RAG 인덱스는 로컬 임베딩으로 만든 것입니다. 임베딩 설정이 다르면 처음 실행할 때 Azure 임베딩으로 한 번 다시 만듭니다 (문서 84개, 수 초).
 
-## 4. 서비스 실행 (UI)
+## 4. 서비스 실행 (API + UI)
 
 ```bash
-docker run --rm -p 8501:8501 -p 8000:8000 req2data-agent:submit
+make run
 ```
 
 - UI: http://localhost:8501
 - API 문서(Swagger): http://localhost:8000/docs
 
-**데모 시연 (버튼 두 번)**
-1. **새 프로젝트** 화면: 데모 안내와 함께 샘플 `01_repurchase`, 사용자 유형 "실무자"가 미리 선택되어 있습니다. **프로젝트 만들고 실행**을 누릅니다.
-2. Agent 진행이 실시간으로 표시되고 확인 질문 2개가 나옵니다. 녹화 당시 답변이 채워져 있으니 **답변하고 계속**을 누릅니다.
-3. 결과 탭에서 요약, 요구사항 명세, 데이터 매핑, 설계·SQL, 검증 리포트, 추적표, 진행 로그를 보고 산출물을 내려받습니다.
+1. **새 프로젝트** 화면에서 샘플 정의서를 고르거나 직접 붙여 넣고 **프로젝트 만들고 실행**을 누릅니다.
+2. Agent 진행이 실시간으로 표시되고, 정의서에 빠진 내용이 있으면 확인 질문이 나옵니다. 답하고 **답변하고 계속**을 누릅니다.
+3. 결과 탭에서 요약(참고 근거 포함), 요구사항 명세, 데이터 매핑, 설계·SQL, 검증 리포트, 추적표, 진행 로그를 봅니다.
 4. **데이터 카탈로그** 화면에서 카탈로그·용어집·설계 가이드 검색과 테이블 프로파일을 볼 수 있습니다.
 
-데모 모드(Azure 키 없이 실행)는 실제 LLM(Qwen2.5 14B)으로 실행한 응답을 녹화해 재생합니다. 재생은 녹화와 같은 입력일 때만 맞습니다. 다른 정의서나 답변을 넣으면 "🎬 데모 녹화와 다른 입력" 표시와 함께 규칙 기반 기본값으로 진행합니다.
+Docker로 실행하려면 `make up`(Docker Compose) 또는 `make submit`(단일 이미지 빌드)을 씁니다. 자세한 내용은 [service.md](service.md)에 있습니다.
 
-## 5. Azure OpenAI(GPT)로 실행
-
-과제 실행 환경처럼 `AOAI_*` 환경변수가 있으면 그대로 넘깁니다. 키가 있으면 자동으로 실제 GPT로 실행되고(`DEMO_MODE=false`), 시작할 때 RAG 인덱스를 GPT 임베딩으로 한 번 다시 만듭니다(83개 문서, 수 초).
-
-```bash
-docker run --rm -p 8501:8501 -p 8000:8000 \
-  -e AOAI_ENDPOINT -e AOAI_API_KEY \
-  -e AOAI_DEPLOY_GPT41_MINI -e AOAI_DEPLOY_EMBED_3_SMALL \
-  req2data-agent:submit
-```
-
-| 환경변수 | 용도 | 기본값 |
-| --- | --- | --- |
-| `AOAI_ENDPOINT`, `AOAI_API_KEY` | Azure OpenAI 엔드포인트·키 (`AZURE_OPENAI_ENDPOINT`·`AZURE_OPENAI_API_KEY`도 가능) | 없음 → 데모 모드 |
-| `AOAI_DEPLOY_GPT41_MINI` | 채팅 배포 이름 | `gpt-4.1-mini` |
-| `AOAI_DEPLOY_EMBED_3_SMALL` | 임베딩 배포 이름 | `text-embedding-3-small` |
-| `AOAI_API_VERSION` | API 버전 | `2024-10-21` |
-| `AZURE_CHAT_DEPLOYMENT` | 다른 채팅 배포를 쓸 때 (예: `-e AZURE_CHAT_DEPLOYMENT=$AOAI_DEPLOY_GPT41`) | |
-| `DEMO_MODE` | `true`면 키가 있어도 녹화 재생 | 키 유무로 자동 |
-
-연결 확인: `curl localhost:8000/health` → `"llm": "azure:<배포 이름>", "demo_mode": false`. 브라우저 없이 `scenario` 명령에 같은 `-e` 옵션을 붙이면 샘플 01을 GPT로 끝까지 실행합니다.
-
-## 6. 이미지 구성
+## 5. 구성
 
 | 경로 | 내용 |
 | --- | --- |
-| `/app/src/req2data` | Agent(Supervisor, 요구사항 분석, 데이터 탐색, 데이터셋 설계, 검증, 리포트), LangGraph 그래프, RAG, SQL 빌더, FastAPI 서비스 |
-| `/app/ui` | Streamlit UI |
-| `/app/prompts` | Agent별 역할 프롬프트 YAML, Few-shot 예시 |
-| `/app/data` | Olist 카탈로그(한글 설명·PK/FK·시점 순서)·용어집·설계 가이드·샘플 정의서 3종, 적재된 DuckDB(`data/db/olist.duckdb`) |
-| `/app/storage/chroma` | RAG 벡터 인덱스 (bge-m3로 구축. Azure 키가 있으면 시작 시 GPT 임베딩으로 재구축) |
-| `/app/demo/recordings` | 데모 녹화 (LLM 응답·검색 순위·사용자 입력) |
-| `/app/tests` | 테스트 (`test` 명령) |
-| `/app/docs` | 기획서(`PRD.md`), Agent 구조, RAG, 서비스 설계 문서 |
+| `src/req2data/agents` | Supervisor, 요구사항 분석, 데이터 탐색, 데이터셋 설계, 검증, 리포트, 도구 호출 루프, 인용 검증 |
+| `src/req2data/graph` | LangGraph 그래프(`StateGraph`, 조건부 엣지)와 State |
+| `src/req2data/rag` | 전처리, Chroma 인덱스, 하이브리드 검색기, FK 그래프 |
+| `src/req2data/llm` | LLM 제공자, LCEL 체인, 구조화 출력 |
+| `src/req2data/tools` | Agent 도구 6개, 읽기 전용 SQL |
+| `src/req2data/api`, `ui` | FastAPI(SSE), Streamlit |
+| `prompts` | Agent별 역할 프롬프트 YAML, Few-shot 예시 |
+| `data` | Olist 카탈로그(한글 설명·PK/FK·시점 순서), 용어집, 설계 가이드, 샘플 정의서 3종, DuckDB |
+| `storage/chroma` | RAG 벡터 인덱스 |
+| `scripts` | 인덱스 구축, RAG 흐름 실행, 환경 점검, 데이터 적재 |
+| `tests` | 단위 테스트 |
+| `docs` | Agent 구조, RAG, 서비스 설계 문서 |
 
-컨테이너 안을 직접 보려면 `docker run --rm -it req2data-agent:submit bash`를 실행합니다.
+## 6. 문제 해결
 
-## 7. 문제 해결
+- **`[FAIL] 채팅 호출: ... 403 Public access is disabled`**: Azure OpenAI 엔드포인트가 사설망 전용입니다. 허용된 네트워크(과제 실행 환경) 안에서 실행하세요.
+- **`[FAIL] RAG 인덱스`**: 임베딩 호출이 실패했습니다. 임베딩 배포 이름(`AOAI_DEPLOY_EMBED_3_SMALL`)을 확인하세요. 실패해도 서비스는 키워드 검색으로 동작합니다.
+- **포트가 이미 사용 중**: `Makefile`의 `api`·`ui` 타깃에서 포트(8000, 8501)를 바꿉니다.
 
-- **포트가 이미 사용 중**: `-p 18501:8501 -p 18000:8000`처럼 바꾸고 http://localhost:18501 로 접속합니다.
-- **Apple Silicon에서 amd64 파일을 불러옴**: 에뮬레이션으로 느리게 동작합니다. arm64 파일을 쓰세요.
-- **UI에 "API 서버에 연결할 수 없습니다"**: 컨테이너 시작 직후 몇 초간 나올 수 있습니다. 새로고침하세요.
+## 7. 데이터 출처
 
-## 8. 데이터 출처
-
-Olist Brazilian E-Commerce Public Dataset (Kaggle, CC BY-NC-SA 4.0), https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce. 이미지에는 원본 CSV 대신 적재·프로파일된 DuckDB 파일을 넣었습니다.
+Olist Brazilian E-Commerce Public Dataset (Kaggle, CC BY-NC-SA 4.0), https://www.kaggle.com/datasets/olistbr/brazilian-ecommerce. 원본 CSV 대신 적재·프로파일된 DuckDB 파일을 넣었습니다.

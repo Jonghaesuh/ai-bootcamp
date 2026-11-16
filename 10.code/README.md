@@ -3,6 +3,27 @@
 요구사항 정의서 → ML 데이터셋 설계(구조화 → 데이터 매핑 → 타깃·피처 → 마트 SQL → 검증) LangGraph Multi-Agent.
 상세 기획: `Req2Data Agent – (서종해).md`
 
+## 평가 항목별 구현 위치
+
+| 평가 항목 | 구현 위치 (`src/req2data/`) | 실행 |
+| --- | --- | --- |
+| 임베딩·Vector DB 인덱싱, 저장·조회 | `rag/index.py` `KnowledgeIndex` (`langchain_chroma.Chroma`의 `add_documents`·`similarity_search_with_score`), `scripts/build_index.py` | `make index` |
+| 문서 분할·메타데이터·정제 | `rag/preprocess.py` (`clean_text`, `split_markdown`, `enrich_metadata`, `dedupe`), `rag/documents.py` `build_documents` | `make rag-flow` |
+| Retrieval | `rag/retriever.py` `HybridRetriever(BaseRetriever)`: 용어집 쿼리 확장 → 벡터 검색 + BM25 → RRF, `tools/catalog.py` `CatalogRetriever` | `make rag-flow` |
+| 검색 지식을 근거와 함께 반영 | `llm/chains.py` `retrieval_chain`·`rag_chain`, `agents/base.py` `knowledge`·`cite`, `agents/citations.py` `validate_citations`, `reporting/render.py` `citations_md` | 산출물 `summary.md`의 "참고 근거" |
+| LangChain 체인·LLM 호출 | `llm/chains.py` (`ChatPromptTemplate \| LLM \| StrOutputParser \| PydanticOutputParser`), `llm/structured.py` `invoke_structured` | `make test` |
+| LangGraph 노드·엣지·상태 | `graph/builder.py` (`StateGraph`, `add_node`, `add_edge`, `add_conditional_edges`), `graph/state.py` `Req2DataState`, `agents/supervisor.py` (`interrupt`) | `make run` |
+| Tool binding·Tool 선택 호출 | `agents/tool_loop.py` (`bind_tools`, `ToolNode`, `tools_condition`), `tools/catalog.py` `build_catalog_tools` (도구 6개) | `make test` |
+| 도메인 맞춤 검증 | `agents/reviewer.py` 검사 7종: `check_existence`, `check_sql`, `check_leakage`, `check_censoring`, `check_quality`, `check_coverage`, `check_grounding` | `make run` |
+
+실행 순서:
+
+```bash
+make setup                                    # uv sync (Python 3.12)
+export AOAI_ENDPOINT=... AOAI_API_KEY=...     # Azure OpenAI. 배포 이름은 AOAI_DEPLOY_GPT41_MINI, AOAI_DEPLOY_EMBED_3_SMALL
+uv run python scripts/check_env.py --full     # LLM·임베딩·Tool 호출 점검 → 인덱스 구축 → 샘플 1건 전체 실행
+```
+
 ## 환경 설정
 
 ```bash
@@ -22,13 +43,14 @@ make index     # 인덱스만 다시 구축 (CSV 없이도 카탈로그 정의·
 
 ```bash
 make run       # API http://localhost:8000/docs + UI http://localhost:8501
-make demo      # LLM 없이 기록된 응답으로 실행
+make rag-flow  # RAG 흐름만 단계별로 실행: 전처리 → 인덱싱 → 검색 → 근거 포함 응답
+make check     # 실행 환경 점검 + 샘플 1건 전체 실행
 make up        # Docker Compose
 ```
 
-API·UI·데모 모드·Docker 상세: [docs/service.md](docs/service.md)
+API·UI·Docker 상세: [docs/service.md](docs/service.md)
 
-제출용 단일 Docker 이미지(Azure OpenAI GPT, 키 없으면 데모 재생, amd64·arm64): `make submit` → `dist/`, 실행 안내 [docs/SUBMISSION.md](docs/SUBMISSION.md)
+제출용 소스 zip: `make source-zip` → `dist/req2data-agent-source.zip`, 실행 안내 [docs/SUBMISSION.md](docs/SUBMISSION.md)
 
 ## Agent 구조
 
@@ -57,9 +79,9 @@ src/req2data/
   agents/      Supervisor + 요구사항·탐색·설계·검증·리포트 Agent
   graph/       LangGraph State·그래프·라우팅
   schemas/     Pydantic 계약 (RequirementSpec, DataMapping, DatasetDesign, ReviewReport, RouteDecision)
-  llm/         LLM·임베딩 제공자 추상화 (azure/ollama/openai/anthropic/gemini), 데모 모드
-  rag/         카탈로그 인덱싱, Chroma+BM25 하이브리드, FK 그래프
-  tools/       Agent 도구 (MCP 클라이언트 포함)
+  llm/         LLM 제공자 추상화 (azure/ollama/openai/anthropic/gemini), LCEL 체인, 구조화 출력
+  rag/         전처리(정제·분할·메타데이터), Chroma 인덱스, 하이브리드 검색기, FK 그래프
+  tools/       Agent 도구 6개, CatalogClient 경계, 읽기 전용 SQL
   memory/      체크포인터(단기)·Store(장기)
   reporting/   명세서·추적표·리포트 생성
   api/         FastAPI (SSE)

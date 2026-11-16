@@ -17,6 +17,7 @@ flowchart LR
   RA & ASK & DE & DS & RV & RP --> SUP
 ```
 
+- 그래프는 `graph/builder.py`에서 조립합니다. `supervisor`에서 `add_conditional_edges`로 갈라지고(`route_next`가 State의 `route.next`를 읽음), 각 노드는 `add_edge`로 `supervisor`에 돌아옵니다.
 - Agent끼리는 직접 호출하지 않고, 모든 노드가 끝나면 `supervisor`로 돌아옵니다.
 - State에는 Pydantic 모델을 `model_dump(mode="json")`한 dict만 넣습니다(체크포인터 직렬화·SSE 전송이 단순해짐). 읽을 때 `graph.state.load()`로 다시 검증합니다.
 - `ask_user`는 `interrupt()`로 멈추고 `Command(resume={"answers": {질문 ID: 답변}})`으로 재개합니다. 답을 `answers`로 감싸는 이유는 LangGraph가 resume dict의 키를 interrupt ID로 해석할 수 있기 때문입니다. 빠진 답은 `default_option`으로 채웁니다.
@@ -47,8 +48,8 @@ flowchart LR
 | Agent | 프롬프트 | 실행 방식 | 출력 |
 | --- | --- | --- | --- |
 | requirement_analyst | `prompts/requirement_analyst.yaml` + 동적 Few-shot | Structured Output | `RequirementSpec`, `ClarificationQuestion[]` |
-| data_explorer | `prompts/data_explorer.yaml` | 고정 선행 조회 → (선택) ReAct → Structured Output → 스키마 대조로 환각 제거 | `DataMapping` |
-| dataset_designer | `prompts/dataset_designer.yaml` + 동적 Few-shot | Plan-and-Solve → (선택) ReAct → Structured Output으로 `DesignPlan` → `CohortSQLBuilder`가 SQL 생성·실행 확인 → 계획 오류면 오류·스키마를 넣어 계획 수정(최대 2회) | `DatasetDesign` |
+| data_explorer | `prompts/data_explorer.yaml` | 고정 선행 조회 → 도구 호출 루프 → Structured Output → 스키마 대조로 환각 제거 | `DataMapping` |
+| dataset_designer | `prompts/dataset_designer.yaml` + 동적 Few-shot | Plan-and-Solve → 도구 호출 루프 → Structured Output으로 `DesignPlan` → `CohortSQLBuilder`가 SQL 생성·실행 확인 → 계획 오류면 오류·스키마를 넣어 계획 수정(최대 2회) | `DatasetDesign` |
 | reviewer | `prompts/reviewer.yaml` | 규칙 검사(판정) + LLM 요약(설명만) | `ReviewReport` |
 | report (노드) | `prompts/report.yaml` | 템플릿 + 사용자 유형별 LLM 요약 | 산출물 파일, `TraceabilityRow[]` |
 
@@ -62,10 +63,12 @@ flowchart LR
 - YAML에 `version`을 두어 프롬프트 변경 이력을 관리합니다.
 - 모든 LLM 호출은 temperature 0(`.env`의 `LLM_TEMPERATURE`)입니다.
 
-### Structured Output 처리 (`llm/structured.py`)
+### Structured Output 처리 (`llm/chains.py`, `llm/structured.py`)
+
+LLM 호출은 LCEL 체인입니다: `ChatPromptTemplate | LLM | StrOutputParser | JSON 추출 | PydanticOutputParser`. 출력 형식 안내는 파서의 `get_format_instructions()`로 만듭니다. `invoke_structured`가 이 체인에 재시도와 기본값 대체를 감쌉니다.
 
 ```
-LLM 호출 → JSON 추출 → Pydantic 검증
+체인 호출 → JSON 추출 → Pydantic 검증
   ├ 성공 → 반환
   └ 실패 → 오류 내용을 넣어 재요청 (config.yaml workflow.structured_output_retries 회)
             └ 그래도 실패 → Agent별 규칙 기반 기본값 (used_fallback=True, trace에 기록)
@@ -110,7 +113,21 @@ LLM은 **무엇을** 정하고 코드는 **어떻게**를 책임집니다. 로�
 
 누수가 발견되면 "기준 시점을 더 늦은 시각으로 옮기는 안"을 확인 질문으로 만들어 두고, 검증 통과 후 사용자에게 묻습니다(기준 시점은 비즈니스 결정이므로 자동으로 바꾸지 않음).
 
-## 4. 도구 경계 (`tools/catalog.py`)
+## 4. 도구 호출 루프 (`agents/tool_loop.py`)
+
+탐색·설계 Agent는 구조화 출력 전에 도구로 추가 조사를 합니다. 루프는 LangGraph 하위 그래프입니다.
+
+```
+START → agent ──(tool_calls 있음)──→ tools ─→ agent
+              └─(없음)→ END
+```
+
+- `agent` 노드: `llm.bind_tools(tools)`로 묶은 모델을 호출합니다. 어떤 도구를 쓸지는 모델이 정합니다.
+- `tools` 노드: `ToolNode`가 호출된 도구를 실행합니다. 없는 도구 이름이나 도구 예외는 오류 메시지로 모델에 돌려줍니다.
+- 분기: `tools_condition`. 단계 한도는 `config.yaml`의 `workflow.max_react_steps`입니다.
+- 도구 6개(`build_catalog_tools`): `search_catalog`, `search_knowledge`, `describe_table`, `profile_column`, `find_join_path`, `run_readonly_sql`.
+
+## 5. 도구 경계 (`tools/catalog.py`)
 
 Agent는 `CatalogClient` 프로토콜에만 의존합니다. 지금은 테스트용 DuckDB 구현(`tests/fixtures/fake_catalog.py`)으로 검증하고, 이후 `mcp-catalog` 서버 클라이언트를 같은 프로토콜로 붙입니다.
 
@@ -122,7 +139,7 @@ Agent는 `CatalogClient` 프로토콜에만 의존합니다. 지금은 테스트
 | `find_join_path` | FK 그래프 조인 경로 |
 | `run_readonly_sql` | 읽기 전용 SQL |
 
-## 5. 아직 구현하지 않은 부분
+## 6. 아직 구현하지 않은 부분
 
 - `mcp-catalog` 서버와 MCP 기반 `CatalogClient` (지금은 `tools/local_catalog.py`가 같은 프로토콜로 DuckDB·RAG에 직접 연결. RAG 구성은 [rag.md](rag.md))
 - Few-shot 예시의 벡터 검색 전환, 승인 흐름과 연결된 장기 기억(사례 추가 API `KnowledgeBase.add_case`만 있음)

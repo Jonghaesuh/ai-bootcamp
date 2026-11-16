@@ -73,6 +73,12 @@ submit:
 	cp docs/SUBMISSION.md dist/
 	cd dist && shasum -a 256 *.tar.gz > SHA256SUMS
 
+# 제출용 소스 zip → dist/req2data-agent-source.zip (가상환경·Docker 이미지 제외).
+# storage/와 data/db/는 gitignore 대상이라 git에 등록된 파일 목록에 직접 더한다.
+source-zip:
+	mkdir -p dist && rm -f dist/req2data-agent-source.zip
+	(git ls-files; ls data/db/olist.duckdb data/catalog/profiles.json; find storage/chroma -type f) | zip -q dist/req2data-agent-source.zip -@
+
 # Ollama가 필요한 테스트 (실제 bge-m3 검색 품질 등)
 test-llm:
 	uv run pytest -m llm
