@@ -1,7 +1,7 @@
 """Agent가 데이터에 접근하는 유일한 경계. MCP 카탈로그 서버 클라이언트가 이 프로토콜을 구현한다."""
 
 import json
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
@@ -92,6 +92,11 @@ def build_catalog_tools(client: CatalogClient, *, max_rows: int = 50) -> list[Ba
         return _dump(client.search_catalog(query))
 
     @tool
+    def search_knowledge(query: str, source: Literal["glossary", "guide", "case"]) -> str:
+        """업무 지식을 검색한다. glossary: 비즈니스 용어의 정의·계산법, guide: 데이터셋 설계 가이드(누수·기준 시점·분할), case: 과거 승인 설계 사례."""
+        return _dump(client.search_catalog(query, k=4, source=source))
+
+    @tool
     def describe_table(table: str) -> str:
         """테이블의 컬럼, 타입, PK/FK, 시점 컬럼 정보를 조회한다."""
         return _dump(client.describe_table(table))
@@ -114,4 +119,11 @@ def build_catalog_tools(client: CatalogClient, *, max_rows: int = 50) -> list[Ba
         except SQLExecutionError as exc:
             return _dump({"error": str(exc)})
 
-    return [search_catalog, describe_table, profile_column, find_join_path, run_readonly_sql]
+    return [
+        search_catalog,
+        search_knowledge,
+        describe_table,
+        profile_column,
+        find_join_path,
+        run_readonly_sql,
+    ]

@@ -80,6 +80,7 @@ class DatasetDesigner(BaseAgent):
                 "investigate", requirements=requirements, mapping=mapping_text, schema=schema
             ),
             build_catalog_tools(self.catalog),
+            into=retrieved,
         )
         result = self.structured(
             system,

@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from req2data.agents.citations import citation_records, validate_citations
 from req2data.agents.fewshot import FewShotSelector
 from req2data.agents.prompts import PromptRegistry
+from req2data.agents.tool_loop import retrieved_from_tools, run_tool_loop
 from req2data.config import Settings, get_settings
 from req2data.graph.state import Req2DataState
 from req2data.llm import StructuredResult, get_chat_model, invoke_structured
@@ -100,28 +101,25 @@ class BaseAgent:
             fallback=fallback,
         )
 
-    def react(self, system: str, task: str, tools: list[BaseTool]) -> str:
-        """도구로 추가 조사하고 발견한 사실을 메모로 돌려준다. 실패해도 설계를 막지 않는다."""
+    def react(
+        self,
+        system: str,
+        task: str,
+        tools: list[BaseTool],
+        into: list[Document] | None = None,
+    ) -> str:
+        """모델이 도구를 골라 추가 조사하고(agents/tool_loop.py) 발견한 사실을 메모로 돌려준다.
+        검색 도구가 찾은 문서는 `into`에 모은다. 실패해도 설계를 막지 않는다."""
         if not self.deps.cfg("workflow.react_enabled", True) or not tools:
             return "(추가 조사 생략)"
-        from langchain.agents import create_agent
-        from langgraph.errors import GraphRecursionError
-
         max_steps = self.deps.cfg("workflow.max_react_steps", 12)
-        agent = create_agent(self.deps.llm, tools, system_prompt=system)
-        messages: list[BaseMessage] = []
         try:
-            for chunk in agent.stream(
-                {"messages": [HumanMessage(content=task)]},
-                {"recursion_limit": max_steps * 2 + 1},
-                stream_mode="values",
-            ):
-                messages = chunk["messages"]
-        except GraphRecursionError:
-            log.info("%s: ReAct 단계 한도(%d) 도달", self.name, max_steps)
+            messages = run_tool_loop(self.deps.llm, tools, system, task, max_steps=max_steps)
         except Exception as exc:
             log.warning("%s: ReAct 실패: %s", self.name, exc)
             return f"(추가 조사 실패: {exc})"
+        if into is not None:
+            into.extend(retrieved_from_tools(messages))
         return _summarize_react(messages)
 
     def knowledge(

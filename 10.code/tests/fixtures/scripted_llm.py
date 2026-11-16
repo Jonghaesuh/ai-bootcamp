@@ -1,4 +1,5 @@
-"""테스트용 LLM: 프롬프트의 '출력 스키마: X'를 보고 X에 등록된 응답을 순서대로 돌려준다."""
+"""테스트용 LLM: 프롬프트의 '출력 스키마: X'를 보고 X에 등록된 응답을 순서대로 돌려준다.
+스키마가 없는 호출(도구 호출 루프)에는 script_react로 등록한 메시지를 순서대로 돌려준다."""
 
 import json
 import re
@@ -15,12 +16,22 @@ _SCHEMA = re.compile(r"출력 스키마: (\w+)")
 class ScriptedChatModel(BaseChatModel):
     _responses: dict[str, list[str]] = PrivateAttr(default_factory=dict)
     _calls: list[dict[str, Any]] = PrivateAttr(default_factory=list)
+    _react: list[AIMessage] = PrivateAttr(default_factory=list)
+    _bound_tools: list[str] = PrivateAttr(default_factory=list)
 
     def script(self, schema: str, *responses: Any) -> "ScriptedChatModel":
         self._responses.setdefault(schema, []).extend(
             r if isinstance(r, str) else json.dumps(r, ensure_ascii=False) for r in responses
         )
         return self
+
+    def script_react(self, *messages: AIMessage) -> "ScriptedChatModel":
+        self._react.extend(messages)
+        return self
+
+    @property
+    def bound_tools(self) -> list[str]:
+        return self._bound_tools
 
     @property
     def calls(self) -> list[dict[str, Any]]:
@@ -37,6 +48,7 @@ class ScriptedChatModel(BaseChatModel):
         return "scripted"
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> "ScriptedChatModel":
+        self._bound_tools = [getattr(t, "name", str(t)) for t in tools]
         return self
 
     def _generate(
@@ -47,6 +59,8 @@ class ScriptedChatModel(BaseChatModel):
         schema = match.group(1) if match else "react"
         self._calls.append({"schema": schema, "messages": messages})
         if schema == "react":
+            if self._react:
+                return ChatResult(generations=[ChatGeneration(message=self._react.pop(0))])
             content = "조사 완료: 추가로 확인할 사항 없음"
         else:
             queue = self._responses.get(schema) or []

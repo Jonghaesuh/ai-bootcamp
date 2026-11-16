@@ -35,10 +35,12 @@ class DataExplorer(BaseAgent):
         prefetch_text = as_json(prefetch)
         system = self.system(state)
 
+        retrieved = [hit_to_document(h) for h in (*prefetch["search_hits"], *prefetch["glossary"])]
         notes = self.react(
             system,
             self.prompt.task("investigate", requirements=requirements, prefetch=prefetch_text),
             build_catalog_tools(self.catalog),
+            into=retrieved,
         )
         result = self.structured(
             system,
@@ -47,7 +49,6 @@ class DataExplorer(BaseAgent):
             fallback=lambda: fallback_mapping(spec, prefetch["join_paths"]),
         )
         mapping = self.drop_hallucinations(result.value, list(prefetch["tables"]))
-        retrieved = [hit_to_document(h) for h in (*prefetch["search_hits"], *prefetch["glossary"])]
         citations, rejected = self.cite(mapping, retrieved)
         return {
             "data_mapping": mapping.model_dump(mode="json"),
