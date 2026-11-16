@@ -32,19 +32,19 @@ def test_catalog_documents_table_and_column_level(kb):
     docs = catalog_documents(kb.spec, {"orders.order_status": {"null_ratio": 0.0, "distinct": 8}})
     n_cols = sum(len(t.columns) for t in kb.spec.tables.values())
     assert len(docs) == len(kb.spec.tables) + n_cols
-    assert len({d.doc_id for d in docs}) == len(docs)
-    status = next(d for d in docs if d.doc_id == "column:orders.order_status")
-    assert "프로파일: 결측률 0.0" in status.text and "주의:" in status.text
-    review = next(d for d in docs if d.doc_id == "column:order_reviews.review_score")
+    assert len({d.id for d in docs}) == len(docs)
+    status = next(d for d in docs if d.id == "column:orders.order_status")
+    assert "프로파일: 결측률 0.0" in status.page_content and "주의:" in status.page_content
+    review = next(d for d in docs if d.id == "column:order_reviews.review_score")
     assert review.metadata["available_at"] == "order_reviews.review_creation_date"
-    assert all(v is not None for d in docs for v in d.chroma_metadata().values())
+    assert all(v is not None for d in docs for v in d.metadata.values())
 
 
 def test_guide_chunked_by_heading():
     chunks = markdown_chunks(PATHS.guides / "dataset_design_guide.md", "guide")
     sections = (PATHS.guides / "dataset_design_guide.md").read_text(encoding="utf-8").count("\n## ")
-    assert len(chunks) == sections
-    assert all(c.text.startswith("[데이터셋 설계 가이드]") for c in chunks)
+    assert len(chunks) == sections + 1  # 제목 아래 머리말도 청크가 된다
+    assert all(c.page_content.startswith("[데이터셋 설계 가이드]") for c in chunks)
 
 
 def test_tokenize_mixes_korean_bigrams_and_column_parts():

@@ -4,9 +4,9 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from langchain_core.documents import Document
 from rank_bm25 import BM25Okapi
 
-from req2data.rag.documents import RagDocument
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.recording import DenseRecorder
 from req2data.rag.sources import GlossaryTerm
@@ -22,19 +22,19 @@ def _squash(text: str) -> str:
 
 @dataclass
 class SearchHit:
-    doc: RagDocument
+    doc: Document
     score: float
     ranks: dict[str, int] = field(default_factory=dict)  # 검색기별 순위 (1부터)
 
     def as_dict(self) -> dict[str, Any]:
         m = self.doc.metadata
         return {
-            "doc_id": self.doc.doc_id,
-            "source": self.doc.source,
+            "doc_id": self.doc.id,
+            "source": m.get("source", ""),
             "table": m.get("table", ""),
             "column": m.get("column", ""),
             "title": m.get("title", ""),
-            "text": self.doc.text,
+            "text": self.doc.page_content,
             "score": round(self.score, 5),
             "ranks": self.ranks,
         }
@@ -63,7 +63,7 @@ class HybridRetriever:
         self.rrf_k = rrf_k
         self.weights = weights or {"dense": 0.5, "bm25": 0.5}
         self.candidate_k = candidate_k
-        self._bm25: tuple[int, BM25Okapi, list[RagDocument]] | None = None
+        self._bm25: tuple[int, BM25Okapi, list[Document]] | None = None
         self.dense_recorder: DenseRecorder | None = None  # 데모 기록·재생 (rag/recording.py)
 
     def expand_query(self, query: str) -> ExpandedQuery:
@@ -86,7 +86,7 @@ class HybridRetriever:
             "dense": self._dense_rank(expanded.text, sources),
             "bm25": self._bm25_rank(expanded.text, sources),
         }
-        docs = {d.doc_id: d for d in self.index.documents()}
+        docs = {d.id: d for d in self.index.documents()}
         fused: dict[str, SearchHit] = {}
         for name, ids in rankings.items():
             w = self.weights.get(name, 0)
@@ -118,12 +118,12 @@ class HybridRetriever:
         if not docs:
             return []
         if self._bm25 is None or self._bm25[0] != len(docs) or self._bm25[2] is not docs:
-            self._bm25 = (len(docs), BM25Okapi([tokenize(d.text) for d in docs]), docs)
+            self._bm25 = (len(docs), BM25Okapi([tokenize(d.page_content) for d in docs]), docs)
         _, bm25, corpus = self._bm25
         scores = bm25.get_scores(tokenize(query))
         order = sorted(range(len(corpus)), key=lambda i: -scores[i])
         return [
-            corpus[i].doc_id
+            corpus[i].id
             for i in order
-            if scores[i] > 0 and (not sources or corpus[i].source in sources)
+            if scores[i] > 0 and (not sources or corpus[i].metadata.get("source") in sources)
         ][: self.candidate_k]

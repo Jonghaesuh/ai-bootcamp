@@ -26,6 +26,8 @@ rag:
   rrf_k: 60
   hybrid_weights: {dense: 0.5, bm25: 0.5}
   fewshot_k: 2
+  chunk_size: 600             # 가이드·사례 청크 최대 글자 수
+  chunk_overlap: 80           # 이웃 청크와 겹치는 글자 수
   sources: [catalog, glossary, guide, case]
 
 review:

@@ -128,4 +128,4 @@ def approve_project(
         f"case_{project.id}", case_markdown(project.title, spec, design, review)
     )
     services.projects.update(project.id, approved=True)
-    return {"approved": True, "case_documents": [d.doc_id for d in docs]}
+    return {"approved": True, "case_documents": [d.id for d in docs]}

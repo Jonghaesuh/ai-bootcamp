@@ -4,16 +4,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
 from req2data.config import Settings, get_settings
-from req2data.rag.documents import (
-    RagDocument,
-    catalog_documents,
-    directory_chunks,
-    glossary_documents,
-    markdown_chunks,
-)
+from req2data.rag.documents import build_documents, markdown_chunks
 from req2data.rag.embeddings import get_embeddings
 from req2data.rag.fk_graph import FKGraph
 from req2data.rag.index import KnowledgeIndex
@@ -55,6 +50,10 @@ class KnowledgeBase:
     ):
         policy = rag_policy or {}
         self.paths = paths
+        self.chunking = {
+            "chunk_size": policy.get("chunk_size", 600),
+            "chunk_overlap": policy.get("chunk_overlap", 80),
+        }
         self.spec: CatalogSpec = load_catalog_spec(paths.catalog)
         self.glossary = load_glossary(paths.glossary)
         self.profiles = load_profiles(paths.profiles)
@@ -85,20 +84,23 @@ class KnowledgeBase:
             )
         return kb
 
-    def documents(self) -> list[RagDocument]:
-        return [
-            *catalog_documents(self.spec, self.profiles),
-            *glossary_documents(self.glossary),
-            *directory_chunks(self.paths.guides, "guide"),
-            *directory_chunks(self.paths.cases, "case"),
-        ]
+    def documents(self) -> list[Document]:
+        return build_documents(
+            self.spec,
+            self.glossary,
+            self.profiles,
+            self.paths.guides,
+            self.paths.cases,
+            **self.chunking,
+        )
 
     def rebuild(self) -> dict[str, int]:
         docs = self.documents()
         self.index.rebuild(docs)
         counts: dict[str, int] = {}
         for d in docs:
-            counts[d.source] = counts.get(d.source, 0) + 1
+            source = d.metadata["source"]
+            counts[source] = counts.get(source, 0) + 1
         return counts
 
     def search(
@@ -107,11 +109,11 @@ class KnowledgeBase:
         sources = [source] if isinstance(source, str) else source
         return [h.as_dict() for h in self.retriever.search(query, k, sources)]
 
-    def add_case(self, case_id: str, markdown: str) -> list[RagDocument]:
+    def add_case(self, case_id: str, markdown: str) -> list[Document]:
         """승인된 설계를 사례 문서로 저장하고 바로 검색 대상에 넣는다 (장기 기억)."""
         self.paths.cases.mkdir(parents=True, exist_ok=True)
         path = self.paths.cases / f"{case_id}.md"
         path.write_text(markdown, encoding="utf-8")
-        docs = markdown_chunks(path, "case")
+        docs = markdown_chunks(path, "case", **self.chunking)
         self.index.upsert(docs)
         return docs

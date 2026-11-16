@@ -6,9 +6,8 @@ from typing import Any
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-
-from req2data.rag.documents import RagDocument
 
 log = logging.getLogger(__name__)
 
@@ -34,7 +33,7 @@ class KnowledgeIndex:
         )
         self.collection_name = collection
         self._collection = self._open()
-        self._docs: list[RagDocument] | None = None
+        self._docs: list[Document] | None = None
 
     def _open(self):
         return self.client.get_or_create_collection(
@@ -43,9 +42,9 @@ class KnowledgeIndex:
             embedding_function=None,
         )
 
-    def rebuild(self, docs: list[RagDocument]) -> int:
+    def rebuild(self, docs: list[Document]) -> int:
         """컬렉션을 지우고 다시 만든다. 문서 ID는 고유해야 한다."""
-        ids = [d.doc_id for d in docs]
+        ids = [d.id for d in docs]
         if len(ids) != len(set(ids)):
             dup = sorted({i for i in ids if ids.count(i) > 1})
             raise ValueError(f"중복 문서 ID: {dup}")
@@ -58,23 +57,23 @@ class KnowledgeIndex:
         self._collection = self._open()
         return self._write(docs, vectors)
 
-    def upsert(self, docs: list[RagDocument]) -> int:
+    def upsert(self, docs: list[Document]) -> int:
         return self._write(docs, self._embed(docs))
 
-    def _embed(self, docs: list[RagDocument]) -> list[list[float]]:
+    def _embed(self, docs: list[Document]) -> list[list[float]]:
         return [
             v
             for i in range(0, len(docs), BATCH)
-            for v in self.embeddings.embed_documents([d.text for d in docs[i : i + BATCH]])
+            for v in self.embeddings.embed_documents([d.page_content for d in docs[i : i + BATCH]])
         ]
 
-    def _write(self, docs: list[RagDocument], vectors: list[list[float]]) -> int:
+    def _write(self, docs: list[Document], vectors: list[list[float]]) -> int:
         for i in range(0, len(docs), BATCH):
             batch = docs[i : i + BATCH]
             self._collection.upsert(
-                ids=[d.doc_id for d in batch],
-                documents=[d.text for d in batch],
-                metadatas=[d.chroma_metadata() for d in batch],
+                ids=[d.id for d in batch],
+                documents=[d.page_content for d in batch],
+                metadatas=[d.metadata for d in batch],
                 embeddings=vectors[i : i + BATCH],
             )
         self._docs = None
@@ -92,11 +91,11 @@ class KnowledgeIndex:
         """문서가 있고 지금 설정한 임베딩으로 만든 인덱스인지. 아니면 의미 검색 차원이 맞지 않는다."""
         return self.count() > 0 and self.built_with() == (self.embedding_name or "unknown")
 
-    def documents(self) -> list[RagDocument]:
+    def documents(self) -> list[Document]:
         if self._docs is None:
             got = self._collection.get(include=["documents", "metadatas"])
             self._docs = [
-                RagDocument(doc_id=i, text=t, source=m.pop("source", ""), metadata=m)
+                Document(id=i, page_content=t, metadata=m)
                 for i, t, m in zip(got["ids"], got["documents"], got["metadatas"], strict=True)
             ]
         return self._docs

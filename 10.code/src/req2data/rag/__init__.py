@@ -1,4 +1,4 @@
-from req2data.rag.documents import SOURCES, RagDocument
+from req2data.rag.documents import SOURCES
 from req2data.rag.fk_graph import FKGraph
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.knowledge_base import KnowledgeBase, KnowledgePaths
@@ -14,7 +14,6 @@ __all__ = [
     "KnowledgeBase",
     "KnowledgeIndex",
     "KnowledgePaths",
-    "RagDocument",
     "SearchHit",
     "load_catalog_spec",
     "load_glossary",
