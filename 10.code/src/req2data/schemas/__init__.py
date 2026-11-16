@@ -1,3 +1,4 @@
+from req2data.schemas.citation import Citation, GroundedAnswer
 from req2data.schemas.design import (
     DatasetDesign,
     DesignPlan,
@@ -30,6 +31,7 @@ __all__ = [
     "ChangeScope",
     "CheckResult",
     "CheckStatus",
+    "Citation",
     "ClarificationQuestion",
     "ColumnRef",
     "DataMapping",
@@ -38,6 +40,7 @@ __all__ = [
     "EDASummary",
     "FeaturePlan",
     "FeatureSpec",
+    "GroundedAnswer",
     "JoinStep",
     "MappingItem",
     "ReportSummary",
