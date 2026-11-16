@@ -4,11 +4,18 @@ from dataclasses import replace
 
 from langchain_core.documents import Document
 
-from req2data.agents import RequirementAnalyst, Reviewer
+from req2data.agents import DataExplorer, RequirementAnalyst, Reviewer
 from req2data.agents.citations import citation_records, validate_citations
 from req2data.graph import new_project_state
 from req2data.reporting.render import citations_md
-from req2data.schemas import CheckStatus, Citation, DataMapping, DatasetDesign, TargetDefinition
+from req2data.schemas import (
+    CheckStatus,
+    Citation,
+    DataMapping,
+    DatasetDesign,
+    RequirementSpec,
+    TargetDefinition,
+)
 
 RETRIEVED = [
     Document(
@@ -104,3 +111,10 @@ def test_grounding_passes_when_both_cite(deps):
     cite = [Citation(doc_id="guide:dataset_design_guide#1", used_for="기준 시점")]
     r = Reviewer(deps).check_grounding(DataMapping(citations=cite), _design(cite))
     assert r.status == CheckStatus.passed and "2건" in r.evidence
+
+
+def test_explorer_glossary_hits_keep_source_and_title(deps, client):
+    """용어집 인용이 리포트에 출처·제목 없이 나오던 문제: 선행 조회 결과에 메타데이터를 남긴다."""
+    spec = RequirementSpec(prediction_target="첫 구매 고객", target_definition="90일 내 재구매")
+    hits = DataExplorer(replace(deps, catalog=client)).glossary_hits(spec)
+    assert hits and all(h["source"] == "glossary" and h["title"] for h in hits)

@@ -119,7 +119,7 @@ class DataExplorer(BaseAgent):
         """요구사항 용어의 정의·계산법·관련 컬럼 (예: 재구매 → customer_unique_id 기준)."""
         query = " ".join(requirement_queries(spec))
         hits = self.catalog.search_catalog(query, k=4, source="glossary") if query else []
-        return [{"doc_id": h["doc_id"], "text": h["text"]} for h in hits]
+        return [{k: h.get(k, "") for k in ("doc_id", "source", "title", "text")} for h in hits]
 
     def drop_hallucinations(self, mapping: DataMapping, known_tables: list[str]) -> DataMapping:
         tables = set(known_tables) | {c.table for c in _all_refs(mapping)}

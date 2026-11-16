@@ -54,6 +54,7 @@ tasks:
     DesignPlan을 작성하세요. SQL은 쓰지 않습니다.
     - population_filters와 target.condition은 table.column을 쓰는 SQL 조건식입니다 (예: orders.order_status <> 'canceled').
     - repeat_event 타깃은 condition을 비워 두세요.
+    - citations에는 위 '데이터셋 설계 가이드'·'과거 승인 설계 사례'에서 실제로 참고한 문서의 doc_id(대괄호 안의 값, 예: guide:dataset_design_guide#3)와 어떤 판단에 썼는지(used_for)를 적으세요.
   fix_plan: |
     아래 설계 계획으로 데이터셋을 만들다 오류가 났습니다.
 
