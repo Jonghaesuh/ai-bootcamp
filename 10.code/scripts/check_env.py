@@ -28,14 +28,24 @@ from req2data.tools.local_catalog import LocalCatalogClient
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "01_repurchase.md"
 
 
+LOCAL_HINT = "로컬 제공자(ollama·gemini·anthropic)는 `uv sync --extra local`로 패키지를 설치하세요."
+
+
 def step(name: str, fn: Callable[[], Any]) -> bool:
     started = time.time()
     try:
         print(f"[OK]   {name}: {fn()} ({time.time() - started:.1f}초)")
         return True
     except Exception as exc:
-        print(f"[FAIL] {name}: {type(exc).__name__}: {str(exc)[:300]}")
+        hint = f" → {LOCAL_HINT}" if isinstance(exc, ModuleNotFoundError) else ""
+        print(f"[FAIL] {name}: {type(exc).__name__}: {str(exc)[:300]}{hint}")
         return False
+
+
+def _require(value: Any, what: str) -> Any:
+    if value is None:
+        raise RuntimeError(f"{what} 준비에 실패해 건너뜁니다.")
+    return value
 
 
 def run_full(deps: AgentDeps, document: str, project_id: str = "check_env") -> dict[str, Any]:
@@ -85,7 +95,20 @@ def main() -> int:
 
     s = get_settings()
     print(f"LLM {s.llm_label} | 임베딩 {s.embedding_label} | 데모 모드 {s.demo_mode}")
-    llm = get_chat_model(s)
+    made: dict[str, Any] = {}
+
+    def make(key: str, factory: Callable[[], Any]) -> Callable[[], str]:
+        def run() -> str:
+            made[key] = factory()
+            return type(made[key]).__name__
+
+        return run
+
+    results = [
+        step("LLM 준비", make("llm", lambda: get_chat_model(s))),
+        step("지식 베이스 준비", make("kb", lambda: KnowledgeBase.from_settings(s))),
+    ]
+    llm, kb = made.get("llm"), made.get("kb")
 
     @tool
     def describe_table(table: str) -> str:
@@ -94,7 +117,8 @@ def main() -> int:
 
     def tool_call() -> str:
         calls = (
-            llm.bind_tools([describe_table])
+            _require(llm, "LLM")
+            .bind_tools([describe_table])
             .invoke([HumanMessage(content="orders 테이블의 컬럼을 조회하세요.")])
             .tool_calls
         )
@@ -102,19 +126,19 @@ def main() -> int:
             raise RuntimeError("모델이 도구를 호출하지 않았습니다.")
         return f"{calls[0]['name']}({calls[0]['args']})"
 
-    kb = KnowledgeBase.from_settings(s)
-
     def index() -> str:
-        if not kb.ensure_current():
+        if not _require(kb, "지식 베이스").ensure_current():
             raise RuntimeError("인덱스를 다시 만들지 못했습니다 (임베딩 호출 실패).")
         return f"{kb.index.count()}개 문서, {kb.index.built_with()}"
 
-    results = [
+    results += [
         step(
             "채팅 호출",
-            lambda: str(llm.invoke([HumanMessage(content="한 단어로만 답하세요: 안녕")]).content)[
-                :40
-            ],
+            lambda: str(
+                _require(llm, "LLM")
+                .invoke([HumanMessage(content="한 단어로만 답하세요: 안녕")])
+                .content
+            )[:40],
         ),
         step(
             "JSON 출력",
@@ -129,11 +153,13 @@ def main() -> int:
         step("RAG 인덱스", index),
     ]
     if args.full:
-        deps = AgentDeps.from_settings(s, catalog=LocalCatalogClient.from_settings(s, kb=kb))
-        document = args.document.read_text(encoding="utf-8")
-        results.append(
-            step(f"전체 실행 ({args.document.name})", lambda: _full_summary(deps, document))
-        )
+
+        def full() -> str:
+            catalog = LocalCatalogClient.from_settings(s, kb=_require(kb, "지식 베이스"))
+            deps = AgentDeps.from_settings(s, catalog=catalog)
+            return _full_summary(deps, args.document.read_text(encoding="utf-8"))
+
+        results.append(step(f"전체 실행 ({args.document.name})", full))
     print("결과: " + ("모두 정상" if all(results) else "실패 항목 있음"))
     return 0 if all(results) else 1
 

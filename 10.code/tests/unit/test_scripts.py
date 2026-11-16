@@ -85,3 +85,20 @@ def test_check_env_full_run_answers_questions_with_defaults(deps, llm):
     assert out["finished"] and out["row_count"] > 0 and out["passed"] is True
     assert "summary.md" in out["artifacts"]
     shutil.rmtree(deps.artifact_dir, ignore_errors=True)
+
+
+def test_check_env_reports_setup_failure_instead_of_crashing(monkeypatch, capsys):
+    """제공자 패키지가 없거나 설정이 틀려도 traceback 대신 [FAIL]로 알려 준다."""
+    check_env = load_script("check_env")
+
+    def missing(*args, **kwargs):
+        raise ModuleNotFoundError("No module named 'langchain_ollama'")
+
+    monkeypatch.setattr(check_env, "get_chat_model", missing)
+    monkeypatch.setattr(check_env, "get_embeddings", missing)
+    monkeypatch.setattr(check_env.KnowledgeBase, "from_settings", missing)
+    monkeypatch.setattr("sys.argv", ["check_env.py"])
+    assert check_env.main() == 1
+    out = capsys.readouterr().out
+    assert "[FAIL] LLM 준비" in out and "langchain_ollama" in out and "uv sync --extra local" in out
+    assert "실패 항목 있음" in out
