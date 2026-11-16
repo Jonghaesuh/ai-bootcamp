@@ -79,26 +79,3 @@ def test_replay_miss_falls_back_once_with_clear_message(tmp_path):
     )
     assert result.used_fallback and result.attempts == 1  # 재시도하지 않음
     assert result.error == REPLAY_MISS
-
-
-def test_dense_ranking_replays_without_embedding_server(kb, tmp_path):
-    """임베딩 서버가 없어도 데모 재생 프롬프트가 녹화와 같도록, 의미 검색 순위를 기록·재생한다."""
-    from req2data.rag.recording import DenseRecorder
-
-    retriever = kb.retriever
-    original = retriever.index.dense
-    try:
-        retriever.dense_recorder = DenseRecorder(tmp_path / "r.json", "record")
-        recorded = kb.search("재구매 고객 키", k=3, source="catalog")
-
-        def down(*args, **kwargs):
-            raise ConnectionError("Ollama 없음")
-
-        retriever.index.dense = down
-        retriever.dense_recorder = DenseRecorder(tmp_path / "r.json", "replay")
-        assert kb.search("재구매 고객 키", k=3, source="catalog") == recorded  # 기록으로 같은 순위
-        unrecorded = kb.search("배송 지연", k=3, source="catalog")  # 기록 없음 → BM25만
-        assert all(set(h["ranks"]) == {"bm25"} for h in unrecorded)
-    finally:
-        retriever.index.dense = original
-        retriever.dense_recorder = None

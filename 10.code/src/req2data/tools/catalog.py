@@ -3,6 +3,9 @@
 import json
 from typing import Any, Protocol
 
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 from langchain_core.tools import BaseTool, tool
 
 
@@ -51,6 +54,29 @@ def schema_index(client: CatalogClient, tables: list[str]) -> dict[str, dict[str
         for col in desc.get("columns", []):
             index[f"{table}.{col['name']}"] = col
     return index
+
+
+def hit_to_document(hit: dict[str, Any]) -> Document:
+    """search_catalog 결과 dict → LangChain Document."""
+    return Document(
+        id=hit["doc_id"],
+        page_content=hit.get("text", ""),
+        metadata={k: hit.get(k, "") for k in ("source", "table", "column", "title", "score")},
+    )
+
+
+class CatalogRetriever(BaseRetriever):
+    """CatalogClient.search_catalog를 LangChain 검색기로 감싼다. Agent는 이 경계로만 지식을 검색한다."""
+
+    client: Any  # CatalogClient
+    source: str = "catalog"
+    k: int = 8
+
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
+        hits = self.client.search_catalog(query, k=self.k, source=self.source)
+        return [hit_to_document(h) for h in hits]
 
 
 def _dump(value: Any) -> str:

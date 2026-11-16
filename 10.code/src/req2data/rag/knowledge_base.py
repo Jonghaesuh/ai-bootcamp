@@ -13,9 +13,7 @@ from req2data.rag.embeddings import get_embeddings
 from req2data.rag.fk_graph import FKGraph
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.profiling import load_profiles
-from req2data.rag.recording import RECORD_FILE as RETRIEVAL_FILE
-from req2data.rag.recording import DenseRecorder
-from req2data.rag.retriever import HybridRetriever
+from req2data.rag.retriever import HybridRetriever, hit_dict
 from req2data.rag.sources import CatalogSpec, load_catalog_spec, load_glossary
 
 
@@ -60,29 +58,23 @@ class KnowledgeBase:
         self.fk_graph = FKGraph(self.spec)
         self.index = KnowledgeIndex(embeddings, persist_dir, embedding_name=embedding_name)
         self.retriever = HybridRetriever(
-            self.index,
-            self.glossary,
+            index=self.index,
+            glossary=self.glossary,
             top_k=policy.get("top_k", 8),
             rrf_k=policy.get("rrf_k", 60),
-            weights=policy.get("hybrid_weights"),
+            weights=policy.get("hybrid_weights") or {"dense": 0.5, "bm25": 0.5},
         )
 
     @classmethod
     def from_settings(cls, settings: Settings | None = None) -> "KnowledgeBase":
         s = settings or get_settings()
-        kb = cls(
+        return cls(
             KnowledgePaths.under(s.data_dir),
             get_embeddings(s),
             persist_dir=s.chroma_dir,
             rag_policy=s.policy.get("rag", {}),
             embedding_name=s.embedding_label,
         )
-        if s.demo_mode or s.llm_record:
-            kb.retriever.dense_recorder = DenseRecorder(
-                Path(s.demo_recordings_dir) / RETRIEVAL_FILE,
-                "replay" if s.demo_mode else "record",
-            )
-        return kb
 
     def documents(self) -> list[Document]:
         return build_documents(
@@ -107,7 +99,7 @@ class KnowledgeBase:
         self, query: str, k: int | None = None, source: str | list[str] | None = None
     ) -> list[dict[str, Any]]:
         sources = [source] if isinstance(source, str) else source
-        return [h.as_dict() for h in self.retriever.search(query, k, sources)]
+        return [hit_dict(d) for d in self.retriever.with_scope(k, sources).invoke(query)]
 
     def add_case(self, case_id: str, markdown: str) -> list[Document]:
         """승인된 설계를 사례 문서로 저장하고 바로 검색 대상에 넣는다 (장기 기억)."""

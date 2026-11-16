@@ -1,14 +1,16 @@
-"""하이브리드 검색: 용어집 쿼리 확장 → 의미 검색(Chroma) + 키워드 검색(BM25) → RRF 결합 → 소스 필터."""
+"""하이브리드 검색기 (LangChain BaseRetriever): 용어집 쿼리 확장 → 의미 검색(Chroma) + 키워드 검색(BM25) → RRF 결합 → 소스 필터."""
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
+from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
+from pydantic import Field, PrivateAttr
 from rank_bm25 import BM25Okapi
 
 from req2data.rag.index import KnowledgeIndex
-from req2data.rag.recording import DenseRecorder
 from req2data.rag.sources import GlossaryTerm
 from req2data.rag.tokenize import tokenize
 
@@ -20,24 +22,19 @@ def _squash(text: str) -> str:
     return "".join(text.lower().split())
 
 
-@dataclass
-class SearchHit:
-    doc: Document
-    score: float
-    ranks: dict[str, int] = field(default_factory=dict)  # 검색기별 순위 (1부터)
-
-    def as_dict(self) -> dict[str, Any]:
-        m = self.doc.metadata
-        return {
-            "doc_id": self.doc.id,
-            "source": m.get("source", ""),
-            "table": m.get("table", ""),
-            "column": m.get("column", ""),
-            "title": m.get("title", ""),
-            "text": self.doc.page_content,
-            "score": round(self.score, 5),
-            "ranks": self.ranks,
-        }
+def hit_dict(doc: Document) -> dict[str, Any]:
+    """검색 결과 문서 → CatalogClient·API·UI가 쓰는 dict."""
+    m = doc.metadata
+    return {
+        "doc_id": doc.id,
+        "source": m.get("source", ""),
+        "table": m.get("table", ""),
+        "column": m.get("column", ""),
+        "title": m.get("title", ""),
+        "text": doc.page_content,
+        "score": m.get("score", 0.0),
+        "ranks": m.get("ranks", {}),
+    }
 
 
 @dataclass
@@ -46,25 +43,21 @@ class ExpandedQuery:
     terms: list[str]
 
 
-class HybridRetriever:
-    def __init__(
-        self,
-        index: KnowledgeIndex,
-        glossary: list[GlossaryTerm] | None = None,
-        *,
-        top_k: int = 8,
-        rrf_k: int = 60,
-        weights: dict[str, float] | None = None,
-        candidate_k: int = 30,
-    ):
-        self.index = index
-        self.glossary = glossary or []
-        self.top_k = top_k
-        self.rrf_k = rrf_k
-        self.weights = weights or {"dense": 0.5, "bm25": 0.5}
-        self.candidate_k = candidate_k
-        self._bm25: tuple[int, BM25Okapi, list[Document]] | None = None
-        self.dense_recorder: DenseRecorder | None = None  # 데모 기록·재생 (rag/recording.py)
+class HybridRetriever(BaseRetriever):
+    index: KnowledgeIndex
+    glossary: list[GlossaryTerm] = Field(default_factory=list)
+    top_k: int = 8
+    rrf_k: int = 60
+    weights: dict[str, float] = Field(default_factory=lambda: {"dense": 0.5, "bm25": 0.5})
+    candidate_k: int = 30
+    sources: list[str] | None = None  # 지식 소스 필터 (catalog | glossary | guide | case)
+    _bm25: tuple[BM25Okapi, list[Document]] | None = PrivateAttr(default=None)
+
+    def with_scope(
+        self, k: int | None = None, sources: list[str] | None = None
+    ) -> "HybridRetriever":
+        """결과 수와 소스 필터만 바꾼 검색기. 인덱스와 BM25 코퍼스는 공유한다."""
+        return self.model_copy(update={"top_k": k or self.top_k, "sources": sources})
 
     def expand_query(self, query: str) -> ExpandedQuery:
         """용어집 표면형이 쿼리에 있으면 동의어와 관련 컬럼을 덧붙인다 (예: 재구매 → 두 번째 주문, repeat purchase)."""
@@ -77,53 +70,54 @@ class HybridRetriever:
         extra = [w for t in matched for w in (*t.synonyms, *t.related_columns)]
         return ExpandedQuery(" ".join([query, *extra]), [t.term for t in matched])
 
-    def search(
-        self, query: str, k: int | None = None, sources: list[str] | None = None
-    ) -> list[SearchHit]:
-        k = k or self.top_k
+    def _get_relevant_documents(
+        self, query: str, *, run_manager: CallbackManagerForRetrieverRun
+    ) -> list[Document]:
         expanded = self.expand_query(query)
         rankings = {
-            "dense": self._dense_rank(expanded.text, sources),
-            "bm25": self._bm25_rank(expanded.text, sources),
+            "dense": self._dense_rank(expanded.text),
+            "bm25": self._bm25_rank(expanded.text),
         }
         docs = {d.id: d for d in self.index.documents()}
-        fused: dict[str, SearchHit] = {}
+        scores: dict[str, float] = {}
+        ranks: dict[str, dict[str, int]] = {}
         for name, ids in rankings.items():
             w = self.weights.get(name, 0)
             for rank, doc_id in enumerate(ids, 1):
                 if doc_id not in docs:
                     continue
-                hit = fused.setdefault(doc_id, SearchHit(docs[doc_id], 0.0))
-                hit.score += w / (self.rrf_k + rank)
-                hit.ranks[name] = rank
-        return sorted(fused.values(), key=lambda h: -h.score)[:k]
+                scores[doc_id] = scores.get(doc_id, 0.0) + w / (self.rrf_k + rank)
+                ranks.setdefault(doc_id, {})[name] = rank  # 검색기별 순위 (1부터)
+        top = sorted(scores, key=lambda i: -scores[i])[: self.top_k]
+        return [
+            Document(
+                id=i,
+                page_content=docs[i].page_content,
+                metadata={**docs[i].metadata, "score": round(scores[i], 5), "ranks": ranks[i]},
+            )
+            for i in top
+        ]
 
-    def _dense_rank(self, query: str, sources: list[str] | None) -> list[str]:
-        """임베딩 서버가 없으면(Ollama 중단) 키워드 검색만으로 계속한다. 데모 모드면 기록된 순위를 먼저 쓴다."""
-        rec = self.dense_recorder
-        key = rec.key(query, sources, self.candidate_k) if rec else ""
-        if rec and (recorded := rec.get(key)) is not None:
-            return recorded
+    def _dense_rank(self, query: str) -> list[str]:
+        """임베딩 서버가 없거나 인덱스의 임베딩 차원이 다르면 키워드 검색만으로 계속한다."""
         try:
-            ids = self.index.dense(query, self.candidate_k, sources)
+            return self.index.dense(query, self.candidate_k, self.sources)
         except Exception as exc:
             log.warning("의미 검색 실패, BM25만 사용: %s", exc)
             return []
-        if rec:
-            rec.put(key, ids)
-        return ids
 
-    def _bm25_rank(self, query: str, sources: list[str] | None) -> list[str]:
+    def _bm25_rank(self, query: str) -> list[str]:
         docs = self.index.documents()
         if not docs:
             return []
-        if self._bm25 is None or self._bm25[0] != len(docs) or self._bm25[2] is not docs:
-            self._bm25 = (len(docs), BM25Okapi([tokenize(d.page_content) for d in docs]), docs)
-        _, bm25, corpus = self._bm25
+        if self._bm25 is None or self._bm25[1] is not docs:
+            self._bm25 = (BM25Okapi([tokenize(d.page_content) for d in docs]), docs)
+        bm25, corpus = self._bm25
         scores = bm25.get_scores(tokenize(query))
         order = sorted(range(len(corpus)), key=lambda i: -scores[i])
         return [
             corpus[i].id
             for i in order
-            if scores[i] > 0 and (not sources or corpus[i].metadata.get("source") in sources)
+            if scores[i] > 0
+            and (not self.sources or corpus[i].metadata.get("source") in self.sources)
         ][: self.candidate_k]

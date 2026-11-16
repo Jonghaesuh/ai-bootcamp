@@ -1,12 +1,15 @@
 import pytest
+from langchain_core.documents import Document
+from langchain_core.retrievers import BaseRetriever
 
-from req2data.rag import KnowledgePaths
+from req2data.rag import HybridRetriever, KnowledgeIndex, KnowledgePaths
 from req2data.rag.documents import catalog_documents, markdown_chunks
 from req2data.rag.tokenize import tokenize
-from req2data.tools.catalog import SQLExecutionError
+from req2data.tools.catalog import CatalogRetriever, SQLExecutionError
 from req2data.tools.local_catalog import LocalCatalogClient
 from req2data.tools.sql_guard import check_readonly_sql
 from tests.conftest import ROOT
+from tests.fixtures.rag import HashEmbeddings
 
 PATHS = KnowledgePaths.under(ROOT / "data")
 
@@ -71,6 +74,45 @@ def test_source_filter_and_rrf(kb):
     guide = kb.search("리뷰 점수 누수", k=3, source="guide")
     assert all(h["source"] == "guide" for h in guide)
     assert any("누수" in h["text"] for h in guide)
+
+
+def test_hybrid_retriever_is_langchain_retriever(kb):
+    assert isinstance(kb.retriever, BaseRetriever)
+    docs = kb.retriever.invoke("재구매 가능성이 낮은 고객")
+    assert docs and all(isinstance(d, Document) for d in docs)
+    assert docs[0].metadata["score"] > 0 and set(docs[0].metadata["ranks"]) <= {"dense", "bm25"}
+
+
+def test_retriever_composes_in_lcel(kb):
+    chain = kb.retriever.with_scope(k=2, sources=["glossary"]) | (lambda docs: [d.id for d in docs])
+    ids = chain.invoke("재구매")
+    assert 1 <= len(ids) <= 2 and all(i.startswith("glossary:") for i in ids)
+
+
+def test_dense_failure_falls_back_to_bm25(kb, monkeypatch):
+    def down(*args, **kwargs):
+        raise RuntimeError("임베딩 서버 없음")
+
+    monkeypatch.setattr(kb.index, "dense", down)
+    docs = kb.retriever.invoke("재구매 고객")
+    assert docs and all(set(d.metadata["ranks"]) == {"bm25"} for d in docs)
+
+
+def test_dimension_mismatch_falls_back_to_bm25(kb):
+    """다른 임베딩으로 만든 인덱스를 열어도(차원 불일치) 키워드 검색은 계속된다."""
+
+    class Tiny(HashEmbeddings):
+        def _embed(self, text):
+            return [1.0] * 8
+
+    stale = KnowledgeIndex(Tiny(), kb.index.persist_dir, embedding_name="tiny")
+    docs = HybridRetriever(index=stale, glossary=kb.glossary).invoke("재구매 고객")
+    assert docs and all("dense" not in d.metadata["ranks"] for d in docs)
+
+
+def test_catalog_retriever_wraps_client(client):
+    docs = CatalogRetriever(client=client, source="glossary", k=2).invoke("재구매")
+    assert docs and all(d.id.startswith("glossary:") and d.page_content for d in docs)
 
 
 def test_add_case_is_searchable_immediately(kb):
