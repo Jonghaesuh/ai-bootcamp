@@ -1,4 +1,5 @@
 from langchain_core.embeddings import Embeddings
+from pydantic import SecretStr
 
 from req2data.config import Settings, get_settings
 
@@ -25,7 +26,7 @@ def get_embeddings(settings: Settings | None = None) -> Embeddings:
         return AzureOpenAIEmbeddings(
             azure_endpoint=s.azure_openai_endpoint,
             azure_deployment=s.azure_embedding_deployment,
-            api_key=s.azure_openai_api_key,
+            api_key=SecretStr(s.azure_openai_api_key),
             api_version=s.azure_openai_api_version,
         )
     if s.embedding_provider == "ollama":
@@ -36,6 +37,8 @@ def get_embeddings(settings: Settings | None = None) -> Embeddings:
         from langchain_openai import OpenAIEmbeddings
 
         return OpenAIEmbeddings(
-            model=s.embedding_model, api_key=s.openai_api_key, base_url=s.openai_base_url or None
+            model=s.embedding_model,
+            api_key=SecretStr(s.openai_api_key) if s.openai_api_key else None,
+            base_url=s.openai_base_url or None,
         )
     raise ValueError(f"지원하지 않는 임베딩 제공자: {s.embedding_provider}")
