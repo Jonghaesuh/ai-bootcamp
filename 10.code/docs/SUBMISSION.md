@@ -1,14 +1,19 @@
 # Req2Data Agent 제출물 실행 안내
 
-요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 만드는 LangGraph Multi-Agent 서비스입니다. 제출물은 소스 zip 하나입니다.
+요구사항 정의서 → ML 데이터셋 설계(요구사항 구조화 → 데이터 매핑 → 타깃·피처 설계 → 마트 SQL → 검증)를 만드는 LangGraph Multi-Agent 서비스입니다. 제출물은 소스 zip과 안내 문서 2개입니다.
 
 평가 항목별 구현 위치는 [README.md](../README.md) 맨 위의 표에 있습니다.
 
 ## 1. 제출 파일
 
-`req2data-agent-source.zip`: 소스, 테스트, 프롬프트, 지식 소스(카탈로그·용어집·가이드), 적재된 DuckDB(`data/db/olist.duckdb`), RAG 인덱스(`storage/chroma`)가 들어 있습니다. 가상환경과 Docker 이미지는 들어 있지 않습니다.
+| 파일 | 내용 |
+| --- | --- |
+| `req2data-agent-source.zip` | 소스, 테스트, 프롬프트, 지식 소스(카탈로그·용어집·가이드), 적재된 DuckDB(`data/db/olist.duckdb`), RAG 인덱스(`storage/chroma`). 가상환경과 Docker 이미지는 들어 있지 않습니다. |
+| `SUBMISSION.md` | 이 실행 안내 (zip 안의 `docs/SUBMISSION.md`와 같음) |
+| `GITHUB.md` | 같은 코드가 있는 GitHub 저장소·태그(`final-2026-11`)와 평가 항목별 구현 위치 |
+| `SHA256SUMS` | 위 파일들의 SHA-256 체크섬 (`shasum -a 256 -c SHA256SUMS`로 확인) |
 
-필요한 것: Python 3.12, [uv](https://docs.astral.sh/uv/), Azure OpenAI 키.
+필요한 것: Python 3.12, [uv](https://docs.astral.sh/uv/), Azure OpenAI 키. Ollama·Gemini 같은 로컬 제공자를 쓰려면 `uv sync --extra local`로 추가 패키지를 설치합니다.
 
 ## 2. 설치와 환경변수
 
