@@ -12,7 +12,7 @@ flowchart LR
   RUN --> CP[(SqliteSaver<br/>storage/checkpoints)]
   API --> PR[(ProjectRepository<br/>storage/store/projects.sqlite)]
   G --> CAT[LocalCatalogClient<br/>DuckDB + RAG]
-  G --> LLM[Ollama / OpenAI 호환 / Anthropic<br/>데모 모드: 기록 재생]
+  G --> LLM[Ollama / OpenAI 호환<br/>데모 모드: 기록 재생]
 ```
 
 | 구성 | 파일 |
@@ -117,7 +117,7 @@ PyPI는 검사 대상이 아니라 이미지 안의 `uv sync`에는 인증서가
 
 ### LLM 제공자 선택
 
-`.env`의 `LLM_PROVIDER`·`LLM_MODEL`만 바꾸면 전체 Agent가 같은 모델로 바뀝니다. 기본은 Azure OpenAI(GPT)이고, Ollama·Gemini·Anthropic은 `uv sync --extra local`로 설치합니다. 임베딩은 `EMBEDDING_PROVIDER`(기본 azure)로 고르고, 바꾸면 `make index`로 인덱스를 다시 만듭니다(Docker 이미지는 시작 시 자동).
+`.env`의 `LLM_PROVIDER`·`LLM_MODEL`만 바꾸면 전체 Agent가 같은 모델로 바뀝니다. 기본은 Azure OpenAI(GPT)이고, Ollama·Gemini는 `uv sync --extra local`로 설치합니다. 임베딩은 `EMBEDDING_PROVIDER`(기본 azure)로 고르고, 바꾸면 `make index`로 인덱스를 다시 만듭니다(Docker 이미지는 시작 시 자동).
 
 | 제공자 | 설정 | 비고 |
 | --- | --- | --- |
@@ -125,7 +125,6 @@ PyPI는 검사 대상이 아니라 이미지 안의 `uv sync`에는 인증서가
 | Ollama | `LLM_PROVIDER=ollama`, `LLM_MODEL=qwen2.5:14b-instruct` | 무료·로컬. `LLM_NUM_CTX`, `LLM_NUM_PREDICT` 적용, 구조화 출력은 JSON Schema로 디코딩 제약 |
 | Google Gemini | `LLM_PROVIDER=gemini`, `LLM_MODEL=gemini-3.6-flash`, `GOOGLE_API_KEY=...` | 키는 Google AI Studio에서 발급. JSON 응답 모드, 429(분당 요청 제한)는 자동 재시도. Gemini 3.x는 temperature를 받지 않아 보내지 않음 |
 | OpenAI 호환 | `LLM_PROVIDER=openai`, `OPENAI_BASE_URL`, `OPENAI_API_KEY` | |
-| Anthropic | `LLM_PROVIDER=anthropic`, `ANTHROPIC_API_KEY` | |
 
 **Gemini 연결 점검 결과 (2026-11-02, 이 Mac·사내망)**: 발급받은 키로 모델 목록 조회와 `countTokens`는 정상이었습니다. 하지만 실제 생성 호출(`generateContent`)은 실패했습니다. `gemini-flash-latest`는 연결 후 120초 동안 응답이 없었고, `gemini-3.8/3.7/3.6/2.5-flash`는 본문 없는 404를 즉시 돌려줬습니다. 코드 쪽 문제는 아니고, 키(프로젝트 권한·등급)나 네트워크 정책 쪽을 먼저 확인해야 합니다. 생성 호출이 되는 환경이면 `.env`의 세 줄만 바꿔 바로 쓸 수 있습니다.
 

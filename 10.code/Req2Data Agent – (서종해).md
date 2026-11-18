@@ -70,7 +70,7 @@
 
 | 영역 | 적용 기술 |
 | --- | --- |
-| LLM | Ollama 로컬 LLM(Qwen2.5 7B Instruct) 기본. 환경변수로 OpenAI 호환 엔드포인트·Anthropic 또는 더 큰 로컬 모델(14B급)로 전환 |
+| LLM | Ollama 로컬 LLM(Qwen2.5 7B Instruct) 기본. 환경변수로 OpenAI 호환 엔드포인트 또는 더 큰 로컬 모델(14B급)로 전환 |
 | Agent | LangGraph (Supervisor + 4개 역할 Agent + 리포트 노드), LangChain Tool Calling, ReAct |
 | RAG | Ollama 임베딩(bge-m3) + Chroma, BM25 하이브리드 검색 |
 | 데이터 | Olist 브라질 이커머스 공개 데이터(테이블 9개) → DuckDB (LangGraph 체크포인터·Store는 SQLite) |

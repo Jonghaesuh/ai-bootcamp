@@ -28,7 +28,7 @@ from req2data.tools.local_catalog import LocalCatalogClient
 SAMPLE = Path(__file__).resolve().parents[1] / "data" / "samples" / "01_repurchase.md"
 
 
-LOCAL_HINT = "로컬 제공자(ollama·gemini·anthropic)는 `uv sync --extra local`로 패키지를 설치하세요."
+LOCAL_HINT = "로컬 제공자(ollama·gemini)는 `uv sync --extra local`로 패키지를 설치하세요."
 
 
 def step(name: str, fn: Callable[[], Any]) -> bool:

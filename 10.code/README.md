@@ -79,7 +79,7 @@ src/req2data/
   agents/      Supervisor + 요구사항·탐색·설계·검증·리포트 Agent
   graph/       LangGraph State·그래프·라우팅
   schemas/     Pydantic 계약 (RequirementSpec, DataMapping, DatasetDesign, ReviewReport, RouteDecision)
-  llm/         LLM 제공자 추상화 (azure/ollama/openai/anthropic/gemini), LCEL 체인, 구조화 출력
+  llm/         LLM 제공자 추상화 (azure/ollama/openai/gemini), LCEL 체인, 구조화 출력
   rag/         전처리(정제·분할·메타데이터), Chroma 인덱스, 하이브리드 검색기, FK 그래프
   tools/       Agent 도구 6개, CatalogClient 경계, 읽기 전용 SQL
   memory/      체크포인터(단기)·Store(장기)

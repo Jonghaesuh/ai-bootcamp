@@ -73,16 +73,6 @@ def get_chat_model(settings: Settings | None = None, *, json_mode: bool = False)
             timeout=s.llm_timeout_seconds,
             model_kwargs=kwargs,
         )
-    if s.llm_provider == "anthropic":
-        from langchain_anthropic import ChatAnthropic
-
-        return ChatAnthropic(
-            model=s.llm_model,
-            api_key=s.anthropic_api_key,
-            temperature=s.llm_temperature,
-            max_tokens=s.llm_num_predict,
-            timeout=s.llm_timeout_seconds,
-        )
     if s.llm_provider == "gemini":
         from langchain_google_genai import ChatGoogleGenerativeAI
 

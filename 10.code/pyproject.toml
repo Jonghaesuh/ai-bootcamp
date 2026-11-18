@@ -37,10 +37,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-# Ollama(qwen2.5·bge-m3)·Anthropic·Gemini 제공자. Docker 이미지에는 넣지 않는다.
+# Ollama(qwen2.5·bge-m3)·Gemini 제공자. Docker 이미지에는 넣지 않는다.
 local = [
     "langchain-ollama>=0.3",
-    "langchain-anthropic>=0.3",
     "langchain-google-genai>=4.4.2",
 ]
 # MCP 카탈로그 서버 (PRD 2.5 B)

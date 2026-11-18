@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     )
 
     # 기본은 Azure OpenAI(GPT). 과제 실행 환경의 AOAI_* 환경변수를 그대로 읽는다.
-    llm_provider: Literal["azure", "ollama", "openai", "anthropic", "gemini"] = "azure"
+    llm_provider: Literal["azure", "ollama", "openai", "gemini"] = "azure"
     llm_model: str = "qwen2.5:14b-instruct"
     llm_temperature: float = 0.0
     # Ollama 컨텍스트 길이. 기본 4096이면 긴 프롬프트가 잘려 지시·스키마가 사라진다
@@ -27,7 +27,6 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     openai_api_key: str | None = None
     openai_base_url: str | None = None
-    anthropic_api_key: str | None = None
     google_api_key: str | None = None  # LLM_PROVIDER=gemini
 
     # Azure OpenAI (LLM_PROVIDER=azure, EMBEDDING_PROVIDER=azure). AZURE_* 이름이 있으면 우선한다.
