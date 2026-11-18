@@ -12,6 +12,25 @@ from req2data.schemas import (
 )
 
 
+def current_citations(
+    records: list[dict],
+    spec: RequirementSpec,
+    mapping: DataMapping,
+    design: DatasetDesign,
+    review: ReviewReport | None,
+) -> list[dict]:
+    """State의 인용 기록은 재작업·수정 요청 때 버려진 시도의 것까지 쌓인다.
+    최종 산출물에 남아 있는 인용만 남긴다."""
+    outputs = {
+        "requirement_analyst": spec,
+        "data_explorer": mapping,
+        "dataset_designer": design,
+        "reviewer": review,
+    }
+    current = {(agent, c.doc_id) for agent, out in outputs.items() if out for c in out.citations}
+    return [r for r in records if (r["agent"], r["doc_id"]) in current]
+
+
 class ReportNode(BaseAgent):
     """Agent가 아닌 템플릿 노드. 사용자 유형별 요약만 LLM으로 쓴다."""
 
@@ -43,7 +62,9 @@ class ReportNode(BaseAgent):
         files = {
             "summary.md": summary_md(summary).rstrip("\n")
             + "\n\n"
-            + render.citations_md(state.get("citations") or []),
+            + render.citations_md(
+                current_citations(state.get("citations") or [], spec, mapping, design, review)
+            ),
             "requirement_spec.md": render.spec_md(spec),
             "data_mapping.md": render.mapping_md(mapping),
             "dataset_design.md": render.design_md(design),

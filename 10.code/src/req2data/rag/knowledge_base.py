@@ -123,5 +123,10 @@ class KnowledgeBase:
         path = self.paths.cases / f"{case_id}.md"
         path.write_text(markdown, encoding="utf-8")
         docs = markdown_chunks(path, "case", **self.chunking)
-        self.index.upsert(docs)
+        # 같은 사례를 다시 승인해 청크가 줄었으면 남은 옛 청크를 지운다
+        self.index.upsert(docs, stale_prefix=f"case:{path.stem}#")
+        try:
+            self.index.set_corpus(corpus_fingerprint(self.documents()))
+        except Exception as exc:  # 지문 갱신 실패는 다음 시작 때 재구축으로 이어질 뿐이다
+            log.warning("RAG 인덱스 지문 갱신 실패: %s", exc)
         return docs

@@ -20,13 +20,13 @@ def reindex(body: ReindexRequest | None = None, services: Services = Depends(get
     loaded = None
     if body and body.reload_data:
         s = get_settings()
-        services.catalog.close()
-        try:
-            loaded = load_csvs(services.kb.spec, s.raw_data_dir, s.db_path)
-        except FileNotFoundError as exc:
-            raise HTTPException(400, str(exc)) from exc
-        with duckdb.connect(str(s.db_path), read_only=True) as con:
-            save_profiles(profile_tables(con, services.kb.spec), services.kb.paths.profiles)
+        with services.catalog.offline():  # 재적재가 끝날 때까지 다른 요청의 조회를 막는다
+            try:
+                loaded = load_csvs(services.kb.spec, s.raw_data_dir, s.db_path)
+            except FileNotFoundError as exc:
+                raise HTTPException(400, str(exc)) from exc
+            with duckdb.connect(str(s.db_path), read_only=True) as con:
+                save_profiles(profile_tables(con, services.kb.spec), services.kb.paths.profiles)
         services.kb.profiles = load_profiles(services.kb.paths.profiles)
     return {"loaded": loaded, "indexed": services.kb.rebuild()}
 

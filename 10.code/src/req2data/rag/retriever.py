@@ -7,8 +7,7 @@ from typing import Any
 from langchain_core.callbacks import CallbackManagerForRetrieverRun
 from langchain_core.documents import Document
 from langchain_core.retrievers import BaseRetriever
-from pydantic import Field, PrivateAttr
-from rank_bm25 import BM25Okapi
+from pydantic import Field
 
 from req2data.rag.index import KnowledgeIndex
 from req2data.rag.sources import GlossaryTerm
@@ -51,7 +50,6 @@ class HybridRetriever(BaseRetriever):
     weights: dict[str, float] = Field(default_factory=lambda: {"dense": 0.5, "bm25": 0.5})
     candidate_k: int = 30
     sources: list[str] | None = None  # 지식 소스 필터 (catalog | glossary | guide | case)
-    _bm25: tuple[BM25Okapi, list[Document]] | None = PrivateAttr(default=None)
 
     def with_scope(
         self, k: int | None = None, sources: list[str] | None = None
@@ -107,12 +105,10 @@ class HybridRetriever(BaseRetriever):
             return []
 
     def _bm25_rank(self, query: str) -> list[str]:
-        docs = self.index.documents()
-        if not docs:
+        built = self.index.bm25()  # with_scope 사본마다 다시 만들지 않도록 인덱스에 캐시한다
+        if built is None:
             return []
-        if self._bm25 is None or self._bm25[1] is not docs:
-            self._bm25 = (BM25Okapi([tokenize(d.page_content) for d in docs]), docs)
-        bm25, corpus = self._bm25
+        bm25, corpus = built
         scores = bm25.get_scores(tokenize(query))
         order = sorted(range(len(corpus)), key=lambda i: -scores[i])
         return [

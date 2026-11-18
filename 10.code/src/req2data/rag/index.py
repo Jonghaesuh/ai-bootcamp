@@ -10,6 +10,9 @@ from chromadb.config import Settings as ChromaSettings
 from langchain_chroma import Chroma
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from rank_bm25 import BM25Okapi
+
+from req2data.rag.tokenize import tokenize
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +46,7 @@ class KnowledgeIndex:
         self.collection_name = collection
         self.store = self._open()
         self._docs: list[Document] | None = None
+        self._bm25: tuple[BM25Okapi, list[Document]] | None = None
 
     def _open(self, corpus: str = "", name: str | None = None) -> Chroma:
         """컬렉션 메타데이터에 만든 임베딩 이름과 문서 지문을 남겨, 다시 만들어야 하는지 판정한다."""
@@ -92,11 +96,38 @@ class KnowledgeIndex:
             batch = docs[i : i + BATCH]
             store.add_documents(batch, ids=[d.id for d in batch])
 
-    def upsert(self, docs: list[Document]) -> int:
+    def upsert(self, docs: list[Document], stale_prefix: str | None = None) -> int:
+        """문서를 넣거나 갱신한다. `stale_prefix`로 시작하는 ID 가운데 이번에 넣지 않은 문서는
+        지운다 (같은 사례를 다시 저장해 청크 수가 줄어든 경우)."""
         self._add(self.store, docs)
+        if stale_prefix:
+            fresh = {d.id for d in docs}
+            stale = [
+                d.id
+                for d in self.documents()
+                if d.id and d.id.startswith(stale_prefix) and d.id not in fresh
+            ]
+            if stale:
+                self.store.delete(ids=stale)
         self._docs = None
         log.info("인덱스 %s: %d개 문서 반영", self.collection_name, len(docs))
         return len(docs)
+
+    def set_corpus(self, corpus: str) -> None:
+        """증분 반영 뒤 문서 지문을 갱신해, 다음 시작 때 불필요한 전체 재구축을 막는다.
+        거리 함수(hnsw:*)는 생성 후 바꿀 수 없어 메타데이터에서 빼고 넘긴다 (설정은 유지된다)."""
+        col = self.client.get_collection(self.collection_name)
+        meta = {k: v for k, v in (col.metadata or {}).items() if not k.startswith("hnsw:")}
+        col.modify(metadata={**meta, "corpus": corpus})
+
+    def bm25(self) -> tuple[BM25Okapi, list[Document]] | None:
+        """저장된 문서로 만든 BM25 색인. 문서 목록이 바뀔 때만 다시 만든다 (범위만 바꾼 검색기끼리 공유)."""
+        docs = self.documents()
+        if not docs:
+            return None
+        if self._bm25 is None or self._bm25[1] is not docs:
+            self._bm25 = (BM25Okapi([tokenize(d.page_content) for d in docs]), docs)
+        return self._bm25
 
     def count(self) -> int:
         return self.client.get_collection(self.collection_name).count()

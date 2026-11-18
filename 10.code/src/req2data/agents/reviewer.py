@@ -70,8 +70,21 @@ class Reviewer(BaseAgent):
             if confirmation:
                 confirmations.append(confirmation)
             checks.append(self.check_censoring(design, index))
-            eda = self.eda(design)
-            checks += self.check_quality(design, eda)
+            try:
+                eda = self.eda(design)
+            except (
+                SQLExecutionError
+            ) as exc:  # 큰 마트에서 시간 초과 등: 실행 실패도 검증 결과로 남긴다
+                checks.append(
+                    CheckResult(
+                        name="eda",
+                        status=CheckStatus.fail,
+                        evidence=f"EDA 쿼리 실행 실패: {exc}",
+                        rework_target="dataset_designer",
+                    )
+                )
+            else:
+                checks += self.check_quality(design, eda)
         checks.append(self.check_coverage(spec, mapping, design))
         checks.append(self.check_grounding(mapping, design))
 
@@ -402,7 +415,8 @@ class Reviewer(BaseAgent):
             status=CheckStatus.fail,
             evidence=f"반영률 {ratio:.0%} < {threshold:.0%}, 미반영: {uncovered}",
             affected=uncovered,
-            rework_target="data_explorer" if set(uncovered) - mapped else "dataset_designer",
+            # 매핑된 항목은 이미 반영으로 보므로 미반영 항목은 모두 매핑되지 않은 것이다
+            rework_target="data_explorer",
         )
 
     # ---- 종합 ----

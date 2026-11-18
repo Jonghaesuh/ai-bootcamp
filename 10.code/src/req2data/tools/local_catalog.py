@@ -4,6 +4,8 @@ MCP 카탈로그 서버(PRD 2.5 B)는 이 클래스를 도구로 감싸 노출�
 """
 
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -106,9 +108,9 @@ class LocalCatalogClient:
     def run_readonly_sql(self, sql: str, max_rows: int | None = None) -> dict[str, Any]:
         check_readonly_sql(sql, set(self.kb.spec.tables))
         limit = min(max_rows or self.max_rows, self.max_rows)
-        con = self._connection()
-        timer = threading.Timer(self.timeout_seconds, con.interrupt)
-        with self._lock:
+        with self._lock:  # 연결을 얻는 것부터 잠가야 close()·재적재와 겹치지 않는다
+            con = self._connection()
+            timer = threading.Timer(self.timeout_seconds, con.interrupt)
             timer.start()
             try:
                 cur = con.execute(sql)
@@ -128,11 +130,21 @@ class LocalCatalogClient:
         }
 
     def close(self) -> None:
-        """DB 재적재 전에 읽기 전용 연결을 닫는다 (다음 조회 때 다시 연다)."""
+        """읽기 전용 연결을 닫는다 (다음 조회 때 다시 연다)."""
         with self._lock:
-            if self._con is not None:
-                self._con.close()
-                self._con = None
+            self._close()
+
+    @contextmanager
+    def offline(self) -> Iterator[None]:
+        """DB 재적재 동안 연결을 닫고 조회를 막는다. 블록이 끝나야 다음 조회가 연결을 다시 연다."""
+        with self._lock:
+            self._close()
+            yield
+
+    def _close(self) -> None:
+        if self._con is not None:
+            self._con.close()
+            self._con = None
 
     def _connection(self) -> duckdb.DuckDBPyConnection:
         if self._con is None:

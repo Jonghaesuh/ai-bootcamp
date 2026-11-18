@@ -57,7 +57,9 @@ class GraphRunner:
             raise InvalidTransition("이미 실행한 프로젝트입니다. 재개(resume)를 사용하세요.")
         payload = new_project_state(project.id, project.document, project.user_type)
         events = self._stream(project.id, payload)
-        self.demo.record_project(project.document, project.user_type)
+        self._or_close(
+            events, lambda: self.demo.record_project(project.document, project.user_type)
+        )
         return events
 
     def resume(
@@ -73,7 +75,12 @@ class GraphRunner:
             if change_request:
                 raise InvalidTransition("확인 질문에 먼저 답해 주세요.")
             events = self._stream(project.id, Command(resume={"answers": answers or {}}))
-            self.demo.record_answers(snap.interrupts[0].value["questions"], answers or {})
+            self._or_close(
+                events,
+                lambda: self.demo.record_answers(
+                    snap.interrupts[0].value["questions"], answers or {}
+                ),
+            )
             return events
         if snap.next and not change_request:
             return self._stream(project.id, None)  # 중단된 실행을 마지막 체크포인트부터 이어서
@@ -88,12 +95,28 @@ class GraphRunner:
         lock = self._lock_for(project_id)
         if not lock.acquire(blocking=False):
             raise ProjectBusy("이 프로젝트는 이미 실행 중입니다.")
-        return self._events(project_id, payload, lock)
+        events = self._events(project_id, payload, lock)
+        # 시작하지 않은 제너레이터는 닫아도 finally가 돌지 않는다. 첫 yield까지 진행해 두면
+        # 이후 close()·GC(SSE 본문을 끝내 읽지 않은 경우 포함)에서 finally가 잠금을 푼다.
+        next(events)
+        return events
+
+    @staticmethod
+    def _or_close(events: Iterator[dict], action) -> None:
+        """실행 전 부수 작업(데모 녹화)이 실패하면 스트림을 닫아 잠금을 풀고 예외를 그대로 올린다."""
+        try:
+            action()
+        except BaseException:
+            events.close()  # type: ignore[attr-defined]
+            raise
 
     def _events(self, project_id: str, payload: Any, lock: threading.Lock) -> Iterator[dict]:
         config = self.config(project_id)
-        self.projects.update(project_id, status="running", error=None)
+        started = False
         try:
+            yield {}  # _stream이 소비하는 준비 단계 (클라이언트에 나가지 않음)
+            started = True
+            self.projects.update(project_id, status="running", error=None)
             for chunk in self.graph.stream(payload, config, stream_mode="updates"):
                 for node, update in chunk.items():
                     if node == "__interrupt__":
@@ -111,11 +134,12 @@ class GraphRunner:
         except (
             GeneratorExit
         ):  # 클라이언트 연결 종료: 체크포인트는 남아 있어 resume으로 이어갈 수 있다
-            self.projects.update(
-                project_id,
-                status="error",
-                error="실행이 중단되었습니다. 재개하면 이어서 실행합니다.",
-            )
+            if started:
+                self.projects.update(
+                    project_id,
+                    status="error",
+                    error="실행이 중단되었습니다. 재개하면 이어서 실행합니다.",
+                )
             raise
         except Exception as exc:  # 실패도 이벤트로 알리고 상태에 남긴다
             log.exception("프로젝트 %s 실행 실패", project_id)

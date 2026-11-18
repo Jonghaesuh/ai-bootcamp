@@ -318,7 +318,9 @@ class CohortSQLBuilder:
 
 
 def _ident(text: str) -> str:
-    return _IDENT.sub("_", text.lower()).strip("_")
+    """SQL 별칭으로 쓸 식별자. 숫자로 시작하면(예: '30일 주문수' → '30') 따옴표 없이 파싱되지 않으므로 접두어를 붙인다."""
+    name = _IDENT.sub("_", text.lower()).strip("_")
+    return f"feature_{name}" if name[:1].isdigit() else name
 
 
 def _unique(name: str, used: set[str]) -> str:
