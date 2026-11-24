@@ -7,14 +7,14 @@
 
 | 평가 항목 | 구현 위치 (`src/req2data/`) | 실행 |
 | --- | --- | --- |
-| 임베딩·Vector DB 인덱싱, 저장·조회 | `rag/index.py` `KnowledgeIndex` (`langchain_chroma.Chroma`의 `add_documents`·`similarity_search_with_score`), `scripts/build_index.py` | `make index` |
+| 임베딩·Vector DB 인덱싱, 저장·조회 | `rag/index.py` `KnowledgeIndex` (`langchain_chroma.Chroma`의 `add_documents`·`similarity_search_by_vector_with_relevance_scores`, 색인이 비면 BM25로 대체), `scripts/build_index.py` | `make index` |
 | 문서 분할·메타데이터·정제 | `rag/preprocess.py` (`clean_text`, `split_markdown`, `enrich_metadata`, `dedupe`), `rag/documents.py` `build_documents` | `make rag-flow` |
 | Retrieval | `rag/retriever.py` `HybridRetriever(BaseRetriever)`: 용어집 쿼리 확장 → 벡터 검색 + BM25 → RRF, `tools/catalog.py` `CatalogRetriever` | `make rag-flow` |
 | 검색 지식을 근거와 함께 반영 | `llm/chains.py` `retrieval_chain`·`rag_chain`, `agents/base.py` `knowledge`·`cite`, `agents/citations.py` `validate_citations`, `reporting/render.py` `citations_md` | 산출물 `summary.md`의 "참고 근거" |
 | LangChain 체인·LLM 호출 | `llm/chains.py` (`ChatPromptTemplate \| LLM \| StrOutputParser \| PydanticOutputParser`), `llm/structured.py` `invoke_structured` | `make test` |
 | LangGraph 노드·엣지·상태 | `graph/builder.py` (`StateGraph`, `add_node`, `add_edge`, `add_conditional_edges`), `graph/state.py` `Req2DataState`, `agents/supervisor.py` (`interrupt`) | `make run` |
 | Tool binding·Tool 선택 호출 | `agents/tool_loop.py` (`bind_tools`, `ToolNode`, `tools_condition`), `tools/catalog.py` `build_catalog_tools` (도구 6개) | `make test` |
-| 도메인 맞춤 검증 | `agents/reviewer.py` 검사 7종: `check_existence`, `check_sql`, `check_leakage`, `check_censoring`, `check_quality`, `check_coverage`, `check_grounding` | `make run` |
+| 도메인 맞춤 검증 | `agents/reviewer.py` 검사 8종: `check_existence`, `check_sql`, `check_leakage`, `check_censoring`, `check_quality`, `check_coverage`, `check_grounding`, 모델링 실익(`compile`의 양성 건수), `agents/supervisor.py` 재작업 판단 | `make run` |
 
 실행 순서:
 

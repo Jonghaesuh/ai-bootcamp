@@ -303,17 +303,6 @@ def test_change_request_drops_stale_feedback_and_confirmations(deps, llm):
     assert cmd["deferred_questions"] == []
 
 
-def test_incomplete_requirements_stop_before_design(deps):
-    from req2data.agents.supervisor import Supervisor
-
-    blocked = Supervisor(deps)(
-        _sup_state(requirement_spec={"business_goal": "이탈 방지"}, data_mapping=None)
-    )
-    assert blocked["route"]["next"] == "end" and "완성도" in blocked["route"]["reason"]
-    ok = Supervisor(deps)(_sup_state(data_mapping=None))
-    assert ok["route"]["next"] == "data_explorer"
-
-
 def test_reviewer_confirmations_do_not_use_analyst_question_budget(monkeypatch):
     from req2data.agents import supervisor
 

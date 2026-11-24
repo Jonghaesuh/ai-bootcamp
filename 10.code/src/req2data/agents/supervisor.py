@@ -4,14 +4,12 @@ from typing import Any
 from langgraph.types import interrupt
 
 from req2data.agents.base import BaseAgent, as_json
-from req2data.agents.requirement import FIELD_QUESTIONS
 from req2data.graph.state import Req2DataState, invalidate_from, load, trace_event
 from req2data.schemas import (
     PIPELINE,
     AgentName,
     ChangeScope,
     DatasetDesign,
-    RequirementSpec,
     ReviewReport,
     RouteDecision,
 )
@@ -103,17 +101,13 @@ class Supervisor(BaseAgent):
                 update={**invalidate_from(first), "redo_queue": []},
             )
 
-        if not state.get("requirement_spec"):
-            return Candidates(
-                ["requirement_analyst"], "requirement_analyst", "requirement_spec 없음"
-            )
-        if not state.get("data_mapping"):
-            blocked = self.incomplete_requirements(state)
-            if blocked:
-                return Candidates(["end"], "end", blocked)
-            return Candidates(["data_explorer"], "data_explorer", "data_mapping 없음")
-        if not state.get("dataset_design"):
-            return Candidates(["dataset_designer"], "dataset_designer", "dataset_design 없음")
+        for agent, key in (
+            ("requirement_analyst", "requirement_spec"),
+            ("data_explorer", "data_mapping"),
+            ("dataset_designer", "dataset_design"),
+        ):
+            if not state.get(key):
+                return Candidates([agent], agent, f"{key} 없음")
 
         design = load(state, "dataset_design", DatasetDesign)
         review = load(state, "review_report", ReviewReport)
@@ -139,21 +133,6 @@ class Supervisor(BaseAgent):
         if not state.get("artifacts"):
             return Candidates(["report"], "report", "산출물 생성")
         return Candidates(["end"], "end", "완료")
-
-    def incomplete_requirements(self, state: Req2DataState) -> str | None:
-        """명세 완성도가 기준 미만이면 설계로 넘어가지 않는다 (질문 횟수를 다 써서 가정으로 채운 경우).
-        수정 요청(change_request)으로 빠진 항목을 보완하면 다시 진행한다."""
-        spec = load(state, "requirement_spec", RequirementSpec)
-        required = self.deps.cfg("requirement.required_fields", list(FIELD_QUESTIONS))
-        minimum = self.deps.cfg("requirement.min_completeness", 0.7)
-        completeness = spec.completeness(required) if spec else 0.0
-        if completeness >= minimum:
-            return None
-        missing = ", ".join(spec.missing_fields(required)) if spec else ""
-        return (
-            f"요구사항 완성도 {completeness:.0%} < {minimum:.0%}: 설계 중단 "
-            f"(빠진 항목: {missing}). 수정 요청으로 보완하세요."
-        )
 
     def rework_update(self, state: Req2DataState, decision: RouteDecision) -> dict[str, Any]:
         review = load(state, "review_report", ReviewReport)

@@ -1,18 +1,18 @@
 # Req2Data Agent GitHub 저장소 정보
 
-제출한 zip과 같은 코드가 GitHub에 있습니다. 아래 태그가 최종 제출 버전이고, 이전 재제출본은 태그 `resubmission-2026-11`에 남아 있습니다.
+제출한 zip과 같은 코드가 GitHub에 있습니다. 아래 태그가 최종 제출 버전입니다. 이전 제출본은 태그 `final-2026-11`(2026-11-18)과 `resubmission-2026-11`에 남아 있습니다.
 
 | 항목 | 내용 |
 | --- | --- |
 | 저장소 | https://github.com/Jonghaesuh/ai-bootcamp |
-| 제출 버전 | 태그 [`final-2026-11`](https://github.com/Jonghaesuh/ai-bootcamp/tree/final-2026-11/10.code) (최종 제출, 2026-11-18) |
+| 제출 버전 | 태그 [`final-2026-11-r2`](https://github.com/Jonghaesuh/ai-bootcamp/tree/final-2026-11-r2/10.code) (최종 제출, 2026-11-24) |
 | 프로젝트 위치 | 저장소 안의 `10.code/` 폴더 |
 | 작성자 | 서종해 |
 
 ## 받기와 실행
 
 ```bash
-git clone --branch final-2026-11 https://github.com/Jonghaesuh/ai-bootcamp.git
+git clone --branch final-2026-11-r2 https://github.com/Jonghaesuh/ai-bootcamp.git
 cd ai-bootcamp/10.code
 uv sync
 export AOAI_ENDPOINT=... AOAI_API_KEY=...     # Azure OpenAI
@@ -29,19 +29,19 @@ GitHub에는 적재된 DuckDB(`data/db/olist.duckdb`)와 RAG 인덱스(`storage/
 uv run python scripts/check_env.py --full     # LLM·임베딩·Tool 호출 점검 → 샘플 1건 전체 실행
 ```
 
-자세한 실행 방법은 [docs/SUBMISSION.md](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/docs/SUBMISSION.md)에 있습니다.
+자세한 실행 방법은 [docs/SUBMISSION.md](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/docs/SUBMISSION.md)에, 단계별 테스트 방법은 [docs/TEST_GUIDE.md](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/docs/TEST_GUIDE.md)에 있습니다.
 
 ## 평가 항목별 구현 위치
 
 | 평가 항목 | 구현 위치 |
 | --- | --- |
-| 임베딩·Vector DB 인덱싱, 저장·조회 | [`rag/index.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/rag/index.py) `KnowledgeIndex` (`langchain_chroma.Chroma`) |
-| 문서 분할·메타데이터·정제 | [`rag/preprocess.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/rag/preprocess.py), [`rag/documents.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/rag/documents.py) `build_documents` |
-| Retrieval | [`rag/retriever.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/rag/retriever.py) `HybridRetriever(BaseRetriever)` |
-| 검색 지식을 근거와 함께 반영 | [`llm/chains.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/llm/chains.py) `retrieval_chain`, [`agents/citations.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/agents/citations.py), 리포트 "참고 근거" 절 |
-| LangChain 체인·LLM 호출 | [`llm/chains.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/llm/chains.py) (`ChatPromptTemplate \| LLM \| PydanticOutputParser`) |
-| LangGraph 노드·엣지·상태 | [`graph/builder.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/graph/builder.py) (`StateGraph`, `add_conditional_edges`), [`graph/state.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/graph/state.py) |
-| Tool binding·Tool 선택 호출 | [`agents/tool_loop.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/agents/tool_loop.py) (`bind_tools`, `ToolNode`), [`tools/catalog.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/tools/catalog.py) 도구 6개 |
-| 도메인 맞춤 검증 | [`agents/reviewer.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/src/req2data/agents/reviewer.py) 검사 7종 (누수, 절단, 반영률, 근거 등) |
+| 임베딩·Vector DB 인덱싱, 저장·조회 | [`rag/index.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/rag/index.py) `KnowledgeIndex` (`langchain_chroma.Chroma`) |
+| 문서 분할·메타데이터·정제 | [`rag/preprocess.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/rag/preprocess.py), [`rag/documents.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/rag/documents.py) `build_documents` |
+| Retrieval | [`rag/retriever.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/rag/retriever.py) `HybridRetriever(BaseRetriever)` |
+| 검색 지식을 근거와 함께 반영 | [`llm/chains.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/llm/chains.py) `retrieval_chain`, [`agents/citations.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/agents/citations.py), 리포트 "참고 근거" 절 |
+| LangChain 체인·LLM 호출 | [`llm/chains.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/llm/chains.py) (`ChatPromptTemplate \| LLM \| PydanticOutputParser`) |
+| LangGraph 노드·엣지·상태 | [`graph/builder.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/graph/builder.py) (`StateGraph`, `add_conditional_edges`), [`graph/state.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/graph/state.py) |
+| Tool binding·Tool 선택 호출 | [`agents/tool_loop.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/agents/tool_loop.py) (`bind_tools`, `ToolNode`), [`tools/catalog.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/tools/catalog.py) 도구 6개 |
+| 도메인 맞춤 검증 | [`agents/reviewer.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/agents/reviewer.py) 검사 8종 (누수, 절단, 반영률, 근거, 모델링 실익 등)과 [`agents/supervisor.py`](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/src/req2data/agents/supervisor.py) 재작업 판단 |
 
-경로는 모두 `10.code/src/req2data/` 기준입니다. 전체 표는 [README.md](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11/10.code/README.md) 맨 위에 있습니다.
+경로는 모두 `10.code/src/req2data/` 기준입니다. 전체 표는 [README.md](https://github.com/Jonghaesuh/ai-bootcamp/blob/final-2026-11-r2/10.code/README.md) 맨 위에 있습니다.
