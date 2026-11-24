@@ -13,14 +13,16 @@ from pydantic import BaseModel
 from req2data.agents.citations import citation_records, validate_citations
 from req2data.agents.fewshot import FewShotSelector
 from req2data.agents.prompts import PromptRegistry
-from req2data.agents.tool_loop import retrieved_from_tools, run_tool_loop
+from req2data.agents.tool_loop import SEARCH_TOOLS, retrieved_from_tools, run_tool_loop
 from req2data.config import Settings, get_settings
 from req2data.graph.state import Req2DataState
 from req2data.llm import StructuredResult, get_chat_model, invoke_structured
-from req2data.llm.chains import retrieval_chain
+from req2data.llm.chains import format_docs, retrieval_chain
 from req2data.tools.catalog import CatalogClient, CatalogRetriever
 
 log = logging.getLogger(__name__)
+
+MAX_REACT_DOCS = 12  # 추가 조사에서 프롬프트에 넣을 검색 문서 수 상한
 
 
 @dataclass
@@ -109,7 +111,8 @@ class BaseAgent:
         into: list[Document] | None = None,
     ) -> str:
         """모델이 도구를 골라 추가 조사하고(agents/tool_loop.py) 발견한 사실을 메모로 돌려준다.
-        검색 도구가 찾은 문서는 `into`에 모은다. 실패해도 설계를 막지 않는다."""
+        검색 도구가 찾은 문서는 전문을 메모에 넣고, 같은 문서만 인용 검증용으로 `into`에 모은다
+        (프롬프트에 없는 문서를 인용하면 버려지도록). 실패해도 설계를 막지 않는다."""
         if not self.deps.cfg("workflow.react_enabled", True) or not tools:
             return "(추가 조사 생략)"
         max_steps = self.deps.cfg("workflow.max_react_steps", 12)
@@ -118,9 +121,10 @@ class BaseAgent:
         except Exception as exc:
             log.warning("%s: ReAct 실패: %s", self.name, exc)
             return f"(추가 조사 실패: {exc})"
+        docs = _unique_docs(retrieved_from_tools(messages))[:MAX_REACT_DOCS]
         if into is not None:
-            into.extend(retrieved_from_tools(messages))
-        return _summarize_react(messages)
+            into.extend(docs)
+        return _summarize_react(messages, docs)
 
     def knowledge(
         self,
@@ -167,11 +171,31 @@ class BaseAgent:
         }
 
 
-def _summarize_react(messages: list[BaseMessage], limit: int = 600) -> str:
+def _unique_docs(docs: list[Document]) -> list[Document]:
+    """같은 ID는 처음 나온 것 하나만, 처음 나온 순서대로."""
+    unique: dict[str | None, Document] = {}
+    for d in docs:
+        unique.setdefault(d.id, d)
+    return list(unique.values())
+
+
+def _summarize_react(
+    messages: list[BaseMessage], docs: list[Document] | None = None, limit: int = 600
+) -> str:
+    """도구 결과 요약 + 검색 문서 전문. 검색 결과는 잘라 쓰지 않고 [doc_id]와 함께 따로 싣는다."""
     lines = []
     for m in messages:
-        if isinstance(m, ToolMessage):
+        if not isinstance(m, ToolMessage):
+            continue
+        if m.name in SEARCH_TOOLS and docs:
+            lines.append(f"- [{m.name}] 검색 완료 (문서는 아래 '추가 조사 검색 문서')")
+        else:
             lines.append(f"- [{m.name}] {str(m.content)[:limit]}")
+    if docs:
+        lines.append(
+            "\n## 추가 조사 검색 문서 (근거로 쓴 문서는 대괄호 안의 doc_id를 citations에 적을 것)\n"
+            + format_docs(docs)
+        )
     final = next(
         (m for m in reversed(messages) if isinstance(m, AIMessage) and not m.tool_calls), None
     )
