@@ -227,3 +227,155 @@ def test_react_notes_carry_full_search_documents():
     assert [d.id for d in docs] == [h["doc_id"] for h in hits]
     for h in hits:  # 마지막 문서까지 잘리지 않고 [doc_id]와 함께 실린다
         assert f"[{h['doc_id']}]" in notes and h["text"].strip() in notes
+
+
+# ---- 에이전트 로직 리뷰 결함 (피드백, 확인 질문, 완성도, 실익, SQL 가드) ----
+
+_DESIGN = {
+    "version": 3,
+    "analysis_unit": "고객",
+    "entity_key": "k",
+    "reference_time": "t.c",
+    "target": {"description": "d", "window_days": 30, "positive_condition": "p"},
+    "sql": "SELECT 1",
+}
+_FULL_SPEC = {
+    f: "값"
+    for f in (
+        "business_goal",
+        "prediction_target",
+        "analysis_unit",
+        "prediction_time",
+        "target_definition",
+        "success_metric",
+    )
+}
+
+
+def _sup_state(**kw):
+    from req2data.graph.state import new_project_state
+
+    s = new_project_state("p", "문서")
+    s.update(requirement_spec=_FULL_SPEC, data_mapping={"x": 1}, dataset_design=_DESIGN)
+    s.update(kw)
+    return s
+
+
+def test_rework_keeps_user_decision_in_feedback(deps):
+    from req2data.agents.supervisor import Supervisor
+
+    review = {
+        "design_version": 3,
+        "passed": False,
+        "rework_targets": ["dataset_designer"],
+        "feedback": {"dataset_designer": ["[censoring] 새 피드백"]},
+    }
+    state = _sup_state(
+        review_report=review,
+        feedback={"dataset_designer": ["사용자 결정: 기준 시점? → 변경", "[leakage] 옛 피드백"]},
+    )
+    cmd = Supervisor(deps)(state)
+    assert cmd["feedback"]["dataset_designer"] == [
+        "사용자 결정: 기준 시점? → 변경",
+        "[censoring] 새 피드백",
+    ]
+
+
+def test_change_request_drops_stale_feedback_and_confirmations(deps, llm):
+    from req2data.agents.supervisor import Supervisor
+
+    llm.script(
+        "ChangeScope",
+        {"restart_from": "data_explorer", "instruction": "배송 테이블 추가"},
+    )
+    state = _sup_state(
+        change_request="배송 테이블도 써줘",
+        feedback={
+            "dataset_designer": ["[leakage] 옛 피처", "사용자 결정: Q → A"],
+            "data_explorer": ["[coverage] 옛 피드백"],
+        },
+        deferred_questions=[{"id": "V1Q1", "question": "옛 질문", "asked_by": "reviewer"}],
+    )
+    cmd = Supervisor(deps)(state)
+    assert cmd["feedback"]["dataset_designer"] == ["사용자 결정: Q → A"]
+    assert all("[coverage]" not in n for n in cmd["feedback"]["data_explorer"])
+    assert "배송 테이블도 써줘" in " ".join(cmd["feedback"]["data_explorer"])
+    assert cmd["deferred_questions"] == []
+
+
+def test_incomplete_requirements_stop_before_design(deps):
+    from req2data.agents.supervisor import Supervisor
+
+    blocked = Supervisor(deps)(
+        _sup_state(requirement_spec={"business_goal": "이탈 방지"}, data_mapping=None)
+    )
+    assert blocked["route"]["next"] == "end" and "완성도" in blocked["route"]["reason"]
+    ok = Supervisor(deps)(_sup_state(data_mapping=None))
+    assert ok["route"]["next"] == "data_explorer"
+
+
+def test_reviewer_confirmations_do_not_use_analyst_question_budget(monkeypatch):
+    from req2data.agents import supervisor
+
+    monkeypatch.setattr(supervisor, "interrupt", lambda value: {"answers": {}})
+    state = {
+        "pending_questions": [
+            {
+                "id": "V1Q1",
+                "question": "기준 시점?",
+                "asked_by": "reviewer",
+                "default_option": "유지",
+            }
+        ],
+        "question_rounds": 1,
+        "analyst_rounds": 1,
+    }
+    out = supervisor.ask_user(state)
+    assert out["question_rounds"] == 2 and out["analyst_rounds"] == 1
+
+
+def test_newer_confirmation_replaces_older_version():
+    from req2data.agents.reviewer import merge_confirmations
+    from req2data.schemas import ClarificationQuestion
+
+    def q(version, features):
+        return ClarificationQuestion(
+            id=f"V{version}Q1",
+            question=f"{features} 피처를 쓰려면 기준 시점을 바꿀까요?",
+            target_field="dataset_design.reference_time",
+            asked_by="reviewer",
+        )
+
+    deferred = merge_confirmations([], [q(1, "A")], [])
+    deferred = merge_confirmations(deferred, [q(2, "B")], [])
+    assert [d["id"] for d in deferred] == ["V2Q1"]
+    # 새 질문이 없으면 이전 대안 질문은 남는다
+    assert merge_confirmations(deferred, [], []) == deferred
+
+
+def test_infeasible_design_fails_review(deps):
+    from req2data.agents.reviewer import Reviewer
+    from req2data.schemas import DatasetDesign, EDASummary
+
+    design = DatasetDesign.model_validate(_DESIGN)
+    report = Reviewer(deps).compile(design, [], EDASummary(row_count=500, target_ratio=0.01), [])
+    assert report.feasibility == "infeasible" and not report.passed
+    assert report.rework_targets == ["dataset_designer"]
+
+
+def test_sql_guard_table_names_are_case_insensitive():
+    from req2data.tools.sql_guard import check_readonly_sql
+
+    check_readonly_sql("WITH A AS (SELECT * FROM Orders) SELECT * FROM a", {"orders"})
+    check_readonly_sql("SELECT * FROM range(3)", {"orders"})
+
+
+@pytest.mark.parametrize(
+    "sql", ["SELECT * FROM duckdb_settings()", "SELECT * FROM duckdb_secrets()"]
+)
+def test_sql_guard_blocks_system_table_functions(sql):
+    from req2data.tools.catalog import SQLExecutionError
+    from req2data.tools.sql_guard import check_readonly_sql
+
+    with pytest.raises(SQLExecutionError):
+        check_readonly_sql(sql, {"orders"})

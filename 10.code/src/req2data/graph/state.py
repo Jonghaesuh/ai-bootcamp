@@ -26,7 +26,8 @@ class Req2DataState(TypedDict, total=False):
     pending_questions: list[dict]  # 지금 사용자에게 물을 질문
     deferred_questions: list[dict]  # 검증 통과 후 물을 질문 (예: 기준 시점 변경 대안)
     answered: list[dict]  # ClarificationQuestion + "answer"
-    question_rounds: int
+    question_rounds: int  # 전체 질문 라운드 (질문 ID에 쓴다)
+    analyst_rounds: int  # 요구사항 분석가의 질문 라운드 (질문 횟수 한도에 쓴다)
     redo_queue: list[AgentName]  # 답변·수정 요청 때문에 다시 실행할 Agent
 
     # Agent 산출물
@@ -57,6 +58,7 @@ def new_project_state(project_id: str, document: str, user_type: str = "practiti
         "deferred_questions": [],
         "answered": [],
         "question_rounds": 0,
+        "analyst_rounds": 0,
         "redo_queue": [],
         "design_version": 0,
         "rework_counts": {},

@@ -24,7 +24,7 @@ from req2data.tools.catalog import SQLExecutionError, schema_index
 log = logging.getLogger(__name__)
 
 DATA_KINDS = {"population", "target", "feature", "filter"}  # 데이터로 반영돼야 하는 요구사항 종류
-MIN_POSITIVES = 30  # 양성 수가 이보다 적으면 모델링 불가로 판정
+MIN_POSITIVES = 30  # 양성 수가 이보다 적으면 모델링 불가로 판정 (review.min_positives로 변경)
 
 
 def feature_sources(sql: str, column: str, schema: dict[str, dict[str, str]]) -> set[str]:
@@ -125,11 +125,9 @@ class Reviewer(BaseAgent):
                 narrative.value.additional_feedback
             )
 
-        deferred = state.get("deferred_questions") or []
-        known = {q["question"] for q in deferred} | {
-            a["question"] for a in state.get("answered") or []
-        }
-        deferred += [q.model_dump(mode="json") for q in confirmations if q.question not in known]
+        deferred = merge_confirmations(
+            state.get("deferred_questions") or [], confirmations, state.get("answered") or []
+        )
         return {
             "review_report": report.model_dump(mode="json"),
             "deferred_questions": deferred,
@@ -445,6 +443,27 @@ class Reviewer(BaseAgent):
         eda: EDASummary | None,
         confirmations: list[ClarificationQuestion],
     ) -> ReviewReport:
+        feasibility = "ok"
+        if eda is not None:
+            positives = (eda.target_ratio or 0) * eda.row_count
+            min_positives = self.deps.cfg("review.min_positives", MIN_POSITIVES)
+            if eda.row_count == 0 or positives < min_positives:
+                feasibility = "infeasible"
+                # 모델을 학습할 수 없는 설계는 통과시키지 않는다 (승인·사례 저장 차단)
+                checks.append(
+                    CheckResult(
+                        name="feasibility",
+                        status=CheckStatus.fail,
+                        evidence=f"양성 {round(positives)}건 < {min_positives}건: 모델링 불가. "
+                        "타깃 기간·조건 또는 모집단을 넓히세요.",
+                        rework_target="dataset_designer",
+                    )
+                )
+            elif any(
+                c.name in ("row_count", "target_ratio") and c.status == CheckStatus.warn
+                for c in checks
+            ):
+                feasibility = "low"
         failed = [c for c in checks if c.status == CheckStatus.fail]
         targets = sorted({c.rework_target for c in failed if c.rework_target}, key=PIPELINE.index)
         feedback: dict[str, list[str]] = {}
@@ -452,16 +471,6 @@ class Reviewer(BaseAgent):
             if c.rework_target:
                 feedback.setdefault(c.rework_target, []).append(f"[{c.name}] {c.evidence}")
 
-        feasibility = "ok"
-        if eda is not None:
-            positives = (eda.target_ratio or 0) * eda.row_count
-            if eda.row_count == 0 or positives < MIN_POSITIVES:
-                feasibility = "infeasible"
-            elif any(
-                c.name in ("row_count", "target_ratio") and c.status == CheckStatus.warn
-                for c in checks
-            ):
-                feasibility = "low"
         return ReviewReport(
             design_version=design.version,
             checks=checks,
@@ -472,6 +481,24 @@ class Reviewer(BaseAgent):
             feasibility=feasibility,
             confirmations=confirmations,
         )
+
+
+def merge_confirmations(
+    deferred: list[dict], confirmations: list[ClarificationQuestion], answered: list[dict]
+) -> list[dict]:
+    """검증 후 물을 확인 질문 목록을 갱신한다. 같은 항목(예: 기준 시점)에 대한 이전 설계 버전의
+    질문은 최신 설계의 질문으로 바꾼다. 새 질문이 없으면 이전 대안 질문을 남긴다
+    (재설계로 누수 피처를 뺀 경우에도 기준 시점을 옮기는 선택지는 유효하다)."""
+    asked = {a["question"] for a in answered}
+    fresh = [q for q in confirmations if q.question not in asked]
+    replaced = {q.target_field for q in fresh}
+    kept = [
+        q
+        for q in deferred
+        if not (q.get("asked_by") == "reviewer" and q.get("target_field") in replaced)
+    ]
+    known = {q["question"] for q in kept}
+    return kept + [q.model_dump(mode="json") for q in fresh if q.question not in known]
 
 
 def default_summary(report: ReviewReport) -> str:
