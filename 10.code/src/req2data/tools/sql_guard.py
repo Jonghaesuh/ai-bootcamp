@@ -47,9 +47,18 @@ def check_readonly_sql(sql: str, allowed_tables: set[str]) -> None:
         if name in {b.replace("_", "") for b in BLOCKED_FUNCTIONS}:
             raise SQLExecutionError(f"허용되지 않는 함수: {_function_name(func)}")
 
-    ctes = {c.alias_or_name for c in stmt.find_all(exp.CTE)}
+    # DuckDB 식별자는 대소문자를 구분하지 않는다 (FROM Orders == FROM orders)
+    allowed = {t.lower() for t in allowed_tables}
+    ctes = {c.alias_or_name.lower() for c in stmt.find_all(exp.CTE)}
     for table in stmt.find_all(exp.Table):
         if not isinstance(table.this, exp.Identifier):
-            continue  # range() 같은 테이블 함수는 위 함수 검사로 처리
-        if table.name not in ctes and table.name not in allowed_tables:
+            # 테이블 자리의 함수는 range()·generate_series()만 허용한다.
+            # duckdb_settings()·duckdb_secrets() 같은 시스템 함수로 설정을 읽지 못하게 막는다.
+            if isinstance(table.this, exp.GenerateSeries):
+                continue
+            raise SQLExecutionError(
+                f"허용되지 않는 테이블 함수: {table.this.sql(dialect='duckdb')}"
+            )
+        name = table.name.lower()
+        if name not in ctes and name not in allowed:
             raise SQLExecutionError(f"카탈로그에 없는 테이블: {table.name}")

@@ -22,6 +22,16 @@ ANSWER_OWNER: dict[str, AgentName] = {
     "reviewer": "dataset_designer",
 }
 
+# 사용자가 직접 내린 결정. 검증 피드백을 갈아 끼울 때도 남긴다.
+USER_DECISION = "사용자 결정:"
+USER_CHANGE = "사용자 수정 요청"
+USER_PREFIXES = (USER_DECISION, USER_CHANGE)
+
+
+def user_notes(notes: list[str] | None) -> list[str]:
+    return [n for n in notes or [] if n.startswith(USER_PREFIXES)]
+
+
 CHANGE_KEYWORDS: list[tuple[AgentName, tuple[str, ...]]] = [
     ("requirement_analyst", ("목표", "대상", "모집단", "지표", "단위")),
     ("data_explorer", ("테이블", "컬럼", "조인", "데이터 소스")),
@@ -130,7 +140,8 @@ class Supervisor(BaseAgent):
         counts = dict(state.get("rework_counts") or {})
         counts[target] = counts.get(target, 0) + 1
         feedback = dict(state.get("feedback") or {})
-        notes = list(review.feedback.get(target, []))
+        # 사용자 결정은 남기고, 지난 검증 피드백만 이번 검증 피드백으로 바꾼다
+        notes = user_notes(feedback.get(target)) + list(review.feedback.get(target, []))
         if decision.instructions:
             notes.append(decision.instructions)
         feedback[target] = notes
@@ -147,13 +158,24 @@ class Supervisor(BaseAgent):
             fallback=lambda: keyword_scope(request),
         )
         scope = result.value
-        feedback = dict(state.get("feedback") or {})
-        feedback[scope.restart_from] = [f"사용자 수정 요청: {request}", scope.instruction]
+        # 지난 검증 피드백은 이전 설계에 대한 것이므로 버리고 사용자 결정만 남긴다
+        feedback = {
+            agent: kept
+            for agent, notes in (state.get("feedback") or {}).items()
+            if (kept := user_notes(notes))
+        }
+        feedback[scope.restart_from] = [
+            *feedback.get(scope.restart_from, []),
+            f"{USER_CHANGE}: {request}",
+            f"{USER_CHANGE} 해석: {scope.instruction}",
+        ]
         update = {
             **invalidate_from(scope.restart_from),
             "change_request": None,
             "rework_counts": {},
             "feedback": feedback,
+            "deferred_questions": [],  # 이전 설계에 대한 확인 질문
+            **({"analyst_rounds": 0} if scope.restart_from == "requirement_analyst" else {}),
             "route": RouteDecision(next=scope.restart_from, reason=scope.reason).model_dump(
                 mode="json"
             ),
@@ -232,12 +254,17 @@ def ask_user(state: Req2DataState) -> dict:
             if owner != "requirement_analyst":
                 feedback[owner] = [
                     *feedback.get(owner, []),
-                    f"사용자 결정: {q['question']} → {answer}",
+                    f"{USER_DECISION} {q['question']} → {answer}",
                 ]
+    analyst_round = any(
+        q.get("asked_by", "requirement_analyst") == "requirement_analyst" for q in questions
+    )
     return {
         "answered": [*(state.get("answered") or []), *new],
         "pending_questions": [],
-        "question_rounds": state.get("question_rounds", 0) + 1,
+        "question_rounds": state.get("question_rounds", 0) + 1,  # 질문 ID용 전체 라운드
+        # 요구사항 질문 횟수 한도용: 검증 확인 질문 라운드는 세지 않는다
+        "analyst_rounds": state.get("analyst_rounds", 0) + int(analyst_round),
         "redo_queue": sorted(redo, key=PIPELINE.index),
         "feedback": feedback,
         "trace": [trace_event("ask_user", "answered", answers={a["id"]: a["answer"] for a in new})],

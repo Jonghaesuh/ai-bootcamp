@@ -59,7 +59,12 @@ class KnowledgeBase:
         self.glossary = load_glossary(paths.glossary)
         self.profiles = load_profiles(paths.profiles)
         self.fk_graph = FKGraph(self.spec)
-        self.index = KnowledgeIndex(embeddings, persist_dir, embedding_name=embedding_name)
+        self.index = KnowledgeIndex(
+            embeddings,
+            persist_dir,
+            embedding_name=embedding_name,
+            fallback_documents=self.documents,  # 색인이 비어 있으면 원천 문서로 BM25 검색
+        )
         self.retriever = HybridRetriever(
             index=self.index,
             glossary=self.glossary,
@@ -89,7 +94,17 @@ class KnowledgeBase:
             **self.chunking,
         )
 
+    def reload_sources(self) -> None:
+        """카탈로그·용어집·프로파일을 파일에서 다시 읽는다 (재색인 때 편집 내용을 반영)."""
+        spec = load_catalog_spec(self.paths.catalog)
+        glossary = load_glossary(self.paths.glossary)
+        profiles = load_profiles(self.paths.profiles)
+        self.spec, self.glossary, self.profiles = spec, glossary, profiles
+        self.fk_graph = FKGraph(spec)
+        self.retriever.glossary = glossary
+
     def rebuild(self) -> dict[str, int]:
+        self.reload_sources()
         docs = self.documents()
         self.index.rebuild(docs)
         counts: dict[str, int] = {}
@@ -121,12 +136,22 @@ class KnowledgeBase:
         """승인된 설계를 사례 문서로 저장하고 바로 검색 대상에 넣는다 (장기 기억)."""
         self.paths.cases.mkdir(parents=True, exist_ok=True)
         path = self.paths.cases / f"{case_id}.md"
+        previous = path.read_bytes() if path.exists() else None
         path.write_text(markdown, encoding="utf-8")
-        docs = markdown_chunks(path, "case", **self.chunking)
-        # 같은 사례를 다시 승인해 청크가 줄었으면 남은 옛 청크를 지운다
-        self.index.upsert(docs, stale_prefix=f"case:{path.stem}#")
         try:
-            self.index.set_corpus(corpus_fingerprint(self.documents()))
+            docs = markdown_chunks(path, "case", **self.chunking)
+            # 같은 사례를 다시 승인해 청크가 줄었으면 남은 옛 청크를 지운다
+            self.index.upsert(docs, stale_prefix=f"case:{path.stem}#")
+        except Exception:
+            # 색인하지 못한 사례 파일을 남기면 다음 지문에 섞여 영영 색인되지 않는다
+            if previous is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.write_bytes(previous)
+            raise
+        try:
+            # 실제로 색인된 문서로 지문을 만든다. 원천과 다르면 다음 시작 때 재구축된다.
+            self.index.set_corpus(corpus_fingerprint(self.index.stored_documents()))
         except Exception as exc:  # 지문 갱신 실패는 다음 시작 때 재구축으로 이어질 뿐이다
             log.warning("RAG 인덱스 지문 갱신 실패: %s", exc)
         return docs

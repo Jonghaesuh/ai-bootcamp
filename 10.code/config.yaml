@@ -14,7 +14,7 @@ requirement:
     - prediction_time
     - target_definition
     - success_metric
-  min_completeness: 0.7       # 이 미만이면 설계 중단 후 확인 질문 단계
+  min_completeness: 0.7       # 이 미만이면 trace에 blocking 표시 (빠진 항목은 확인 질문으로 보완)
   max_questions: 5            # 한 번에 묻는 확인 질문 수
   max_question_rounds: 2      # 확인 질문 반복 횟수 (초과 시 기본값을 가정하고 진행)
 

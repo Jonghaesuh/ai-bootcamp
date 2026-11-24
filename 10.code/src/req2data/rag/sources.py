@@ -1,6 +1,5 @@
 """RAG 지식 소스 로더: 데이터 카탈로그, 용어집. (가이드·사례는 Markdown 파일 그대로 청크한다.)"""
 
-from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -65,7 +64,7 @@ class GlossaryTerm(BaseModel):
 
 
 def load_catalog_spec(path: Path) -> CatalogSpec:
-    data = dict(_read_yaml(Path(path)))  # 캐시된 원본을 바꾸지 않도록 복사
+    data = dict(_read_yaml(Path(path)))
     tables = {name: TableSpec(name=name, **t) for name, t in data.pop("tables").items()}
     return CatalogSpec(tables=tables, **data)
 
@@ -75,7 +74,6 @@ def load_glossary(path: Path) -> list[GlossaryTerm]:
     return [GlossaryTerm(**t) for t in _read_yaml(path)] if path.exists() else []
 
 
-@cache
 def _read_yaml(path: Path) -> Any:
     with open(path, encoding="utf-8") as f:
         return yaml.safe_load(f)

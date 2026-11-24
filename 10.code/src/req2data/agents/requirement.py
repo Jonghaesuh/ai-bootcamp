@@ -59,7 +59,8 @@ class RequirementAnalyst(BaseAgent):
         questions = self._questions(spec, required, answered, rounds)
 
         assumed: list[str] = []
-        if questions and rounds >= self.deps.cfg("requirement.max_question_rounds", 2):
+        asked = state.get("analyst_rounds", rounds)  # 검증 확인 질문 라운드는 빼고 센다
+        if questions and asked >= self.deps.cfg("requirement.max_question_rounds", 2):
             # 더 묻지 않고 기본값을 가정해 진행한다. 가정은 명세에 남겨 추적한다.
             for q in questions:
                 assumed.append(f"{q.question} → {q.default_option or '미정'} (가정)")
